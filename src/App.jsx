@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function App() {
   const [url, setUrl] = useState('http://galaxyheavyblow.web.fc2.com/fc2-imageviewer/?aid=1&iid=159')
@@ -6,8 +6,54 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [translatingAll, setTranslatingAll] = useState(false)
   const [pageBusy, setPageBusy] = useState({})
-  // 각 말풍선의 번역 표시 상태: { "pageIdx-bubbleIdx": true/false }
   const [visibleBubbles, setVisibleBubbles] = useState({})
+
+  // 작품 컨텍스트
+  const [workName, setWorkName] = useState('')
+  const [context, setContext] = useState('')
+  const [generatingCtx, setGeneratingCtx] = useState(false)
+
+  // localStorage에서 작품 컨텍스트 복원
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('mangaCtx') || '{}')
+      if (saved.workName) setWorkName(saved.workName)
+      if (saved.context) setContext(saved.context)
+    } catch {}
+  }, [])
+
+  const saveContext = () => {
+    if (!workName.trim()) { alert('작품명을 입력하세요'); return }
+    localStorage.setItem('mangaCtx', JSON.stringify({ workName, context }))
+    alert('저장됨')
+  }
+
+  const loadContext = (name) => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('mangaCtx') || '{}')
+      if (saved.workName === name) setContext(saved.context || '')
+      else setContext('')
+    } catch {}
+  }
+
+  const generateContext = async () => {
+    if (!workName.trim()) { alert('작품명을 입력하세요'); return }
+    setGeneratingCtx(true)
+    try {
+      const r = await fetch('/api/generate-context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workName })
+      })
+      const data = await r.json()
+      if (data.context) setContext(data.context)
+      else alert('생성 실패: ' + (data.error || ''))
+    } catch (e) {
+      alert('생성 실패: ' + e.message)
+    } finally {
+      setGeneratingCtx(false)
+    }
+  }
 
   const toggleBubble = (pageIdx, bubbleIdx) => {
     const key = `${pageIdx}-${bubbleIdx}`
@@ -51,7 +97,7 @@ export default function App() {
       const r = await fetch('/api/translate-page', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: page.imageUrl, idx: page.idx, sourceUrl: url })
+        body: JSON.stringify({ imageUrl: page.imageUrl, idx: page.idx, sourceUrl: url, context })
       })
       const data = await r.json()
       if (!r.ok) throw new Error(data?.error || 'failed')
@@ -87,12 +133,12 @@ export default function App() {
       })
       if (!r.ok) throw new Error('export failed')
       const blob = await r.blob()
-      const url = URL.createObjectURL(blob)
+      const u = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url
+      a.href = u
       a.download = `page-${page.idx}-ko.jpg`
       a.click()
-      URL.revokeObjectURL(url)
+      URL.revokeObjectURL(u)
     } catch (e) {
       alert(`내보내기 실패: ${e.message}`)
     } finally {
@@ -115,6 +161,29 @@ export default function App() {
             {translatingAll ? '번역중...' : `전체 번역 (${untranslatedCount})`}
           </button>
         </div>
+
+        <details className="ctx-panel">
+          <summary>작품 컨텍스트 설정</summary>
+          <div className="ctx-body">
+            <div className="ctx-row">
+              <input
+                value={workName}
+                onChange={e => { setWorkName(e.target.value); loadContext(e.target.value) }}
+                placeholder="작품명 (예: 원펀맨)"
+              />
+              <button className="btn-sm btn-purple" onClick={generateContext} disabled={generatingCtx}>
+                {generatingCtx ? '생성중...' : 'AI 생성'}
+              </button>
+              <button className="btn-sm btn-green" onClick={saveContext}>저장</button>
+            </div>
+            <textarea
+              value={context}
+              onChange={e => setContext(e.target.value)}
+              placeholder="캐릭터 이름, 용어, 말투 등 번역 참고 정보..."
+              rows={5}
+            />
+          </div>
+        </details>
       </header>
 
       <main>

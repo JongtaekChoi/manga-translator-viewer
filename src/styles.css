@@ -7,6 +7,15 @@ body{margin:0;background:#101114;color:#f3f3f3;font-family:-apple-system,BlinkMa
 .controls input{flex:1;min-width:240px;padding:10px;border-radius:10px;border:1px solid #3a3f4b;background:#0f1116;color:#f2f2f2}
 .controls button{padding:10px 12px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:600}
 .controls button:disabled{opacity:.6}
+.ctx-panel{margin-top:10px;border:1px solid #2a2e37;border-radius:10px;background:#11151d}
+.ctx-panel summary{cursor:pointer;padding:8px 10px;font-size:13px;color:#94a3b8}
+.ctx-body{padding:0 10px 10px}
+.ctx-row{display:flex;gap:6px;margin-bottom:6px}
+.ctx-row input{flex:1;padding:8px;border:1px solid #3a3f4b;border-radius:8px;background:#0f1116;color:#f2f2f2;font-size:13px}
+.ctx-body textarea{width:100%;padding:8px;border:1px solid #3a3f4b;border-radius:8px;background:#0f1116;color:#f2f2f2;font-size:13px;resize:vertical;font-family:inherit}
+.btn-sm{padding:8px 10px !important;font-size:12px !important;white-space:nowrap;min-width:0 !important;flex-shrink:0}
+.btn-purple{background:#7c3aed !important}
+.btn-green{background:#16a34a !important}
 main{padding:10px}
 .card{margin:12px 0;background:#17191f;border:1px solid #2a2e37;border-radius:12px;overflow:hidden}
 .img-wrap{position:relative;line-height:0}

@@ -152,7 +152,8 @@ app.post('/api/translate-page', async (req, res) => {
     }
 
     // 2) OpenAI로 전체 말풍선을 한번에 번역 (맥락 유지)
-    const translatedBubbles = await translateBubbles(bubbles, imageUrl)
+    const context = String(req.body?.context || '').trim()
+    const translatedBubbles = await translateBubbles(bubbles, imageUrl, context)
 
     const jp = bubbles.map(b => b.text).join('\n')
     const ko = translatedBubbles.map(b => b.ko).join('\n')
@@ -227,7 +228,20 @@ app.post('/api/export-page', async (req, res) => {
   }
 })
 
-async function translateBubbles(bubbles, imageUrl) {
+// AI로 작품 컨텍스트 생성
+app.post('/api/generate-context', async (req, res) => {
+  const workName = String(req.body?.workName || '').trim()
+  if (!workName) return res.status(400).json({ error: 'workName is required' })
+
+  try {
+    const ocrRes = await axios.post(`${OCR_URL}/generate-context`, { workName }, { timeout: 30000 })
+    res.json(ocrRes.data)
+  } catch (e) {
+    res.status(500).json({ error: 'generate context failed', detail: String(e.response?.data?.error || e.message) })
+  }
+})
+
+async function translateBubbles(bubbles, imageUrl, context = '') {
   if (!OPENAI_API_KEY) {
     // API 키 없으면 Google Translate fallback
     const result = []
@@ -285,7 +299,8 @@ async function translateBubbles(bubbles, imageUrl) {
               '- 의역보다는 원문의 뉘앙스를 유지하되 한국어로 자연스럽게',
               '- 효과음이나 의미없는 텍스트는 그대로 음역',
               '- 출력: 번호와 번역만. 설명 없이.',
-              '- 형식: 각 줄에 "번호. 번역"'
+              '- 형식: 각 줄에 "번호. 번역"',
+              ...(context ? [`\n[작품 정보]\n${context}`] : [])
             ].join('\n')
           },
           { role: 'user', content: userContent }
