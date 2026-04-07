@@ -9,8 +9,7 @@ const root = path.join(__dirname, '..')
 const dataDir = path.join(root, 'data')
 const dbPath = path.join(dataDir, 'translations.json')
 
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'moondream'
+const OCR_URL = process.env.OCR_URL || 'http://localhost:8789'
 
 const sourceUrl = process.argv[2]
 const singleIdx = Number(process.argv[3] || 0)
@@ -52,45 +51,22 @@ async function collectImages(url) {
   return images
 }
 
-async function downloadImageAsBase64(url) {
-  const r = await axios.get(url, {
-    responseType: 'arraybuffer',
-    timeout: 15000,
-    headers: { 'User-Agent': 'Mozilla/5.0' }
-  })
-  return Buffer.from(r.data).toString('base64')
+async function ocrImage(imageUrl) {
+  const { data } = await axios.post(`${OCR_URL}/ocr`, { imageUrl }, { timeout: 60000 })
+  return String(data?.text || '').trim()
 }
 
-async function ollamaVisionTranslate(imageBase64) {
-  const prompt = [
-    'This is a Japanese manga page.',
-    'Extract all dialogue text (speech bubbles, narration) in Japanese, then translate each line to Korean.',
-    'Ignore sound effects and background decorative text.',
-    'Output ONLY valid JSON array: [{"jp":"Japanese text","ko":"Korean translation"}]',
-    'If no dialogue is found, output: []'
-  ].join(' ')
-
-  const { data } = await axios.post(`${OLLAMA_URL}/api/generate`, {
-    model: OLLAMA_MODEL,
-    prompt,
-    images: [imageBase64],
-    stream: false,
-    options: { temperature: 0.2 }
-  }, { timeout: 120000 })
-
-  const raw = String(data?.response || '').trim()
-
-  // JSON 배열 추출 시도
-  const match = raw.match(/\[[\s\S]*\]/)
-  if (match) {
-    try {
-      const arr = JSON.parse(match[0])
-      if (Array.isArray(arr)) return arr
-    } catch {}
+async function translateText(jp) {
+  if (!jp) return '[텍스트 없음]'
+  try {
+    const { data } = await axios.get('https://translate.googleapis.com/translate_a/single', {
+      params: { client: 'gtx', sl: 'ja', tl: 'ko', dt: 't', q: jp },
+      timeout: 10000
+    })
+    return Array.isArray(data?.[0]) ? data[0].map(x => x[0]).join('') : '[번역 실패]'
+  } catch {
+    return '[번역 실패]'
   }
-
-  // 실패 시 원본 텍스트 반환
-  return [{ jp: '', ko: raw || '[번역 실패]' }]
 }
 
 async function readDb() {
@@ -117,16 +93,15 @@ async function main() {
 
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i]
-    console.log(`[${i + 1}/${targets.length}] idx=${t.idx} translating...`)
+    console.log(`[${i + 1}/${targets.length}] idx=${t.idx} OCR...`)
 
-    const base64 = await downloadImageAsBase64(t.imageUrl)
-    const result = await ollamaVisionTranslate(base64)
+    const jp = await ocrImage(t.imageUrl)
+    console.log(`[${i + 1}/${targets.length}] idx=${t.idx} jp: ${jp.slice(0, 60)}`)
 
-    const jp = result.map(r => r.jp).filter(Boolean).join('\n')
-    const ko = result.map(r => r.ko).filter(Boolean).join('\n')
+    const ko = await translateText(jp)
+    console.log(`[${i + 1}/${targets.length}] idx=${t.idx} ko: ${ko.slice(0, 60)}`)
 
     pages.push({ idx: t.idx, imageUrl: t.imageUrl, jp, ko, source: 'auto' })
-    console.log(`[${i + 1}/${targets.length}] idx=${t.idx} done`)
   }
 
   const db = await readDb()

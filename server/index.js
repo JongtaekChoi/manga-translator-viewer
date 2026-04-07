@@ -6,17 +6,13 @@ import * as cheerio from 'cheerio'
 import { promises as fs } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const DATA_DIR = path.join(__dirname, '..', 'data')
 const DB_PATH = path.join(DATA_DIR, 'translations.json')
-const execFileAsync = promisify(execFile)
 
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'moondream'
+const OCR_URL = process.env.OCR_URL || 'http://localhost:8789'
 
 const app = express()
 app.use(cors())
@@ -55,6 +51,7 @@ function sortByTrailingNumber(urls) {
   })
 }
 
+// 이미지 수집
 app.get('/api/extract-images', async (req, res) => {
   const { url } = req.query
   if (!url) return res.status(400).json({ error: 'url is required' })
@@ -116,6 +113,7 @@ app.get('/api/extract-images', async (req, res) => {
   }
 })
 
+// 이미지 프록시
 app.get('/api/proxy-image', async (req, res) => {
   const { url } = req.query
   if (!url) return res.status(400).send('url required')
@@ -134,7 +132,7 @@ app.get('/api/proxy-image', async (req, res) => {
   }
 })
 
-// ollama 비전 모델로 단일 페이지 번역
+// manga_ocr로 말풍선 검출 + OCR → Google Translate 번역
 app.post('/api/translate-page', async (req, res) => {
   const imageUrl = String(req.body?.imageUrl || '').trim()
   const idx = Number(req.body?.idx || 0)
@@ -142,45 +140,32 @@ app.post('/api/translate-page', async (req, res) => {
   if (!imageUrl) return res.status(400).json({ error: 'imageUrl is required' })
 
   try {
-    // 이미지 다운로드 → base64
-    const imgRes = await axios.get(imageUrl, {
-      responseType: 'arraybuffer',
-      timeout: 15000,
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    })
-    const base64 = Buffer.from(imgRes.data).toString('base64')
+    // 1) manga_ocr로 말풍선 검출 + 일본어 텍스트 추출
+    const ocrRes = await axios.post(`${OCR_URL}/ocr`, { imageUrl }, { timeout: 120000 })
+    const bubbles = ocrRes.data?.bubbles || []
 
-    const prompt = [
-      'This is a Japanese manga page.',
-      'Extract all dialogue text (speech bubbles, narration) in Japanese, then translate each line to Korean.',
-      'Ignore sound effects and background decorative text.',
-      'Output ONLY valid JSON array: [{"jp":"Japanese text","ko":"Korean translation"}]',
-      'If no dialogue is found, output: []'
-    ].join(' ')
-
-    const { data } = await axios.post(`${OLLAMA_URL}/api/generate`, {
-      model: OLLAMA_MODEL,
-      prompt,
-      images: [base64],
-      stream: false,
-      options: { temperature: 0.2 }
-    }, { timeout: 120000 })
-
-    const raw = String(data?.response || '').trim()
-
-    let result = [{ jp: '', ko: raw || '[번역 실패]' }]
-    const match = raw.match(/\[[\s\S]*\]/)
-    if (match) {
-      try {
-        const arr = JSON.parse(match[0])
-        if (Array.isArray(arr)) result = arr
-      } catch {}
+    if (!bubbles.length) {
+      const page = { idx, imageUrl, jp: '', ko: '', bubbles: [], source: 'auto' }
+      return res.json({ ok: true, page })
     }
 
-    const jp = result.map(r => r.jp).filter(Boolean).join('\n')
-    const ko = result.map(r => r.ko).filter(Boolean).join('\n')
+    // 2) 각 말풍선별로 Google Translate 번역
+    const translatedBubbles = []
+    for (const b of bubbles) {
+      let ko = ''
+      try {
+        const gtRes = await axios.get('https://translate.googleapis.com/translate_a/single', {
+          params: { client: 'gtx', sl: 'ja', tl: 'ko', dt: 't', q: b.text },
+          timeout: 10000
+        })
+        ko = Array.isArray(gtRes.data?.[0]) ? gtRes.data[0].map(x => x[0]).join('') : ''
+      } catch {}
+      translatedBubbles.push({ ...b, ko })
+    }
 
-    const page = { idx, imageUrl, jp, ko, source: 'auto' }
+    const jp = bubbles.map(b => b.text).join('\n')
+    const ko = translatedBubbles.map(b => b.ko).join('\n')
+    const page = { idx, imageUrl, jp, ko, bubbles: translatedBubbles, source: 'auto' }
 
     // DB에 자동 저장
     if (sourceUrl && idx) {
@@ -231,49 +216,7 @@ app.post('/api/translations', async (req, res) => {
   res.json({ ok: true, count: normalizedPages.length })
 })
 
-// 쉘스크립트로 전체/단일 페이지 번역 실행
-app.post('/api/run-local-translate', async (req, res) => {
-  const sourceUrl = String(req.body?.sourceUrl || '').trim()
-  if (!sourceUrl) return res.status(400).json({ error: 'sourceUrl is required' })
-
-  try {
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'run-local-translate.sh')
-    const { stdout, stderr } = await execFileAsync(scriptPath, [sourceUrl], {
-      timeout: 1000 * 60 * 20,
-      maxBuffer: 1024 * 1024 * 4
-    })
-    res.json({ ok: true, stdout, stderr })
-  } catch (e) {
-    res.status(500).json({
-      error: 'local translate failed',
-      detail: String(e.stderr || e.message || e)
-    })
-  }
-})
-
-app.post('/api/run-local-translate-page', async (req, res) => {
-  const sourceUrl = String(req.body?.sourceUrl || '').trim()
-  const idx = Number(req.body?.idx || 0)
-  if (!sourceUrl || !idx) return res.status(400).json({ error: 'sourceUrl and idx are required' })
-
-  try {
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'run-local-translate.sh')
-    const { stdout, stderr } = await execFileAsync(scriptPath, [sourceUrl, String(idx)], {
-      timeout: 1000 * 60 * 5,
-      maxBuffer: 1024 * 1024 * 2
-    })
-
-    const db = await readDb()
-    const page = (db.items[sourceUrl]?.pages || []).find(p => Number(p.idx) === idx) || null
-    res.json({ ok: true, stdout, stderr, page })
-  } catch (e) {
-    res.status(500).json({
-      error: 'local translate page failed',
-      detail: String(e.stderr || e.message || e)
-    })
-  }
-})
-
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`API server running on :${PORT}`)
+  console.log(`  OCR server: ${OCR_URL}`)
 })

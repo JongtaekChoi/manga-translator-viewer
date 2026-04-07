@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm:dev:web\" \"npm:dev:api\"",
+    "dev": "concurrently \"npm:dev:web\" \"npm:dev:api\" \"npm:dev:ocr\"",
     "dev:web": "vite --host 0.0.0.0",
     "dev:api": "node server/index.js",
+    "dev:ocr": ".venv/bin/python scripts/ocr_server.py",
     "build": "vite build",
     "preview": "vite preview"
   },
