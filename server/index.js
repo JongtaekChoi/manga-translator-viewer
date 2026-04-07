@@ -13,6 +13,8 @@ const DATA_DIR = path.join(__dirname, '..', 'data')
 const DB_PATH = path.join(DATA_DIR, 'translations.json')
 
 const OCR_URL = process.env.OCR_URL || 'http://localhost:8789'
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
 const app = express()
 app.use(cors())
@@ -132,7 +134,7 @@ app.get('/api/proxy-image', async (req, res) => {
   }
 })
 
-// manga_ocr로 말풍선 검출 + OCR → Google Translate 번역
+// manga_ocr로 말풍선 검출 + OCR → OpenAI 번역
 app.post('/api/translate-page', async (req, res) => {
   const imageUrl = String(req.body?.imageUrl || '').trim()
   const idx = Number(req.body?.idx || 0)
@@ -149,19 +151,8 @@ app.post('/api/translate-page', async (req, res) => {
       return res.json({ ok: true, page })
     }
 
-    // 2) 각 말풍선별로 Google Translate 번역
-    const translatedBubbles = []
-    for (const b of bubbles) {
-      let ko = ''
-      try {
-        const gtRes = await axios.get('https://translate.googleapis.com/translate_a/single', {
-          params: { client: 'gtx', sl: 'ja', tl: 'ko', dt: 't', q: b.text },
-          timeout: 10000
-        })
-        ko = Array.isArray(gtRes.data?.[0]) ? gtRes.data[0].map(x => x[0]).join('') : ''
-      } catch {}
-      translatedBubbles.push({ ...b, ko })
-    }
+    // 2) OpenAI로 전체 말풍선을 한번에 번역 (맥락 유지)
+    const translatedBubbles = await translateBubbles(bubbles, imageUrl)
 
     const jp = bubbles.map(b => b.text).join('\n')
     const ko = translatedBubbles.map(b => b.ko).join('\n')
@@ -215,6 +206,124 @@ app.post('/api/translations', async (req, res) => {
 
   res.json({ ok: true, count: normalizedPages.length })
 })
+
+// 번역된 이미지 합성 내보내기
+app.post('/api/export-page', async (req, res) => {
+  const imageUrl = String(req.body?.imageUrl || '').trim()
+  const bubbles = Array.isArray(req.body?.bubbles) ? req.body.bubbles : []
+  if (!imageUrl) return res.status(400).json({ error: 'imageUrl is required' })
+
+  try {
+    const ocrRes = await axios.post(`${OCR_URL}/export`, { imageUrl, bubbles }, {
+      timeout: 120000,
+      responseType: 'arraybuffer'
+    })
+    const ct = ocrRes.headers['content-type'] || 'image/jpeg'
+    res.setHeader('Content-Type', ct)
+    res.setHeader('Content-Disposition', 'attachment; filename="translated.jpg"')
+    res.send(Buffer.from(ocrRes.data))
+  } catch (e) {
+    res.status(500).json({ error: 'export failed', detail: String(e.message || e) })
+  }
+})
+
+async function translateBubbles(bubbles, imageUrl) {
+  if (!OPENAI_API_KEY) {
+    // API 키 없으면 Google Translate fallback
+    const result = []
+    for (const b of bubbles) {
+      let ko = ''
+      try {
+        const gtRes = await axios.get('https://translate.googleapis.com/translate_a/single', {
+          params: { client: 'gtx', sl: 'ja', tl: 'ko', dt: 't', q: b.text },
+          timeout: 10000
+        })
+        ko = Array.isArray(gtRes.data?.[0]) ? gtRes.data[0].map(x => x[0]).join('') : ''
+      } catch {}
+      result.push({ ...b, ko })
+    }
+    return result
+  }
+
+  // 번호 매긴 원문 목록
+  const numbered = bubbles.map((b, i) => `${i + 1}. ${b.text}`).join('\n')
+
+  // 이미지를 base64로 변환 (Vision API용)
+  let imageBase64 = null
+  if (imageUrl) {
+    try {
+      const imgRes = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 15000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      })
+      const ct = imgRes.headers['content-type'] || 'image/jpeg'
+      imageBase64 = `data:${ct};base64,${Buffer.from(imgRes.data).toString('base64')}`
+    } catch {}
+  }
+
+  try {
+    const userContent = imageBase64
+      ? [
+          { type: 'image_url', image_url: { url: imageBase64, detail: 'low' } },
+          { type: 'text', text: `이 만화 페이지에서 OCR로 추출한 대사 목록이야. 이미지의 장면과 맥락을 참고해서 번역해줘.\n\n${numbered}` }
+        ]
+      : numbered
+
+    const { data } = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: OPENAI_MODEL,
+        temperature: 0.3,
+        messages: [
+          {
+            role: 'system',
+            content: [
+              '만화 대사 번역가. 일본어 만화 대사를 한국어로 자연스럽게 번역한다.',
+              '- 이미지의 장면, 캐릭터 표정, 상황을 참고하여 맥락에 맞게 번역',
+              '- 캐릭터의 말투와 감정을 살려서 번역',
+              '- 의역보다는 원문의 뉘앙스를 유지하되 한국어로 자연스럽게',
+              '- 효과음이나 의미없는 텍스트는 그대로 음역',
+              '- 출력: 번호와 번역만. 설명 없이.',
+              '- 형식: 각 줄에 "번호. 번역"'
+            ].join('\n')
+          },
+          { role: 'user', content: userContent }
+        ]
+      },
+      {
+        timeout: 60000,
+        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' }
+      }
+    )
+
+    const raw = data?.choices?.[0]?.message?.content || ''
+    // "1. 번역\n2. 번역" 파싱
+    const koMap = new Map()
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^(\d+)\.\s*(.+)/)
+      if (m) koMap.set(Number(m[1]), m[2].trim())
+    }
+
+    return bubbles.map((b, i) => ({ ...b, ko: koMap.get(i + 1) || '' }))
+  } catch (e) {
+    console.error('OpenAI translate error:', e.response?.data?.error?.message || e.message)
+    // 실패 시 Google Translate fallback
+    const result = []
+    for (const b of bubbles) {
+      let ko = ''
+      try {
+        const gtRes = await axios.get('https://translate.googleapis.com/translate_a/single', {
+          params: { client: 'gtx', sl: 'ja', tl: 'ko', dt: 't', q: b.text },
+          timeout: 10000
+        })
+        ko = Array.isArray(gtRes.data?.[0]) ? gtRes.data[0].map(x => x[0]).join('') : ''
+      } catch {}
+      result.push({ ...b, ko })
+    }
+    return result
+  }
+}
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`API server running on :${PORT}`)

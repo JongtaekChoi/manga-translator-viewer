@@ -20,6 +20,7 @@ main{padding:10px}
 .row-actions{margin:0 0 8px}
 .row-actions button{padding:7px 10px;border:0;border-radius:8px;background:#0ea5e9;color:#fff;font-weight:600}
 .row-actions button:disabled{opacity:.6}
+.btn-export{background:#7c3aed !important;margin-left:6px}
 .bubble-details{margin:4px 0 0}
 .bubble-details summary{cursor:pointer;color:#94a3b8;font-size:13px;padding:4px 0}
 .bubble-list{font-size:13px;line-height:1.5;padding:4px 0}

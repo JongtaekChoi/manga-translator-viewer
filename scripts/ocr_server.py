@@ -1,237 +1,429 @@
-"""manga_ocr OCR 서버 — 패널 분할 + 텍스트 영역 위치 반환.
+"""만화 번역 올인원 서버.
 
-1) 흰색 구분선 기반 패널 분할
-2) 패널 내에서 밝은 영역(말풍선 후보) 검출 시도
-3) 각 영역 OCR → 일본어 텍스트만 반환
-4) 바운딩 박스를 퍼센트 좌표로 반환
+- /ocr: comic-text-detector + manga_ocr로 텍스트 검출 + OCR
+- /translate: OCR + 번역 (OpenAI or Google Translate)
+- /export: 번역된 이미지 합성
+- /proxy-image: CORS 우회 이미지 프록시
 """
 
+import io
 import json
 import sys
+import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.request import urlopen, Request
+from urllib.parse import urlparse, parse_qs
 
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from manga_ocr import MangaOcr
+
+CTD_DIR = os.path.join(os.path.dirname(__file__), '..', '.venv', 'comic-text-detector')
+sys.path.insert(0, CTD_DIR)
+from inference import TextDetector
+
+# 환경변수
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
+FONT_PATH = '/System/Library/Fonts/AppleSDGothicNeo.ttc'
 
 print("Loading manga_ocr model...", flush=True)
 mocr = MangaOcr()
 print("manga_ocr model ready.", flush=True)
 
+print("Loading comic-text-detector model...", flush=True)
+import torch
+device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+ctd_model_path = os.path.join(CTD_DIR, 'data', 'comictextdetector.pt')
+ctd = TextDetector(model_path=ctd_model_path, input_size=1024, device=device, act='leaky')
+print(f"comic-text-detector ready (device={device}).", flush=True)
+
+
+# ─── 유틸 ───
 
 def is_japanese(text):
     for ch in text:
         cp = ord(ch)
-        if (0x3040 <= cp <= 0x309F or
-            0x30A0 <= cp <= 0x30FF or
-            0x4E00 <= cp <= 0x9FFF or
-            0xFF66 <= cp <= 0xFF9F):
+        if (0x3040 <= cp <= 0x309F or 0x30A0 <= cp <= 0x30FF or
+            0x4E00 <= cp <= 0x9FFF or 0xFF66 <= cp <= 0xFF9F):
             return True
     return False
 
 
-def find_panels(gray, h, w):
-    """흰색 구분선 기반으로 패널(칸) 분할."""
-    row_means = np.mean(gray, axis=1)
-    white_rows = row_means > 235
-
-    h_splits = [0]
-    in_white = False
-    for y in range(h):
-        if white_rows[y] and not in_white:
-            in_white = True
-            split_start = y
-        elif not white_rows[y] and in_white:
-            in_white = False
-            mid = (split_start + y) // 2
-            if mid > h_splits[-1] + h * 0.06:
-                h_splits.append(mid)
-    h_splits.append(h)
-
-    panels = []
-    for i in range(len(h_splits) - 1):
-        y1, y2 = h_splits[i], h_splits[i + 1]
-        if y2 - y1 < h * 0.04:
-            continue
-        strip = gray[y1:y2, :]
-
-        col_means = np.mean(strip, axis=0)
-        white_cols = col_means > 235
-
-        v_splits = [0]
-        in_white_v = False
-        for x in range(w):
-            if white_cols[x] and not in_white_v:
-                in_white_v = True
-                vs_start = x
-            elif not white_cols[x] and in_white_v:
-                in_white_v = False
-                mid = (vs_start + x) // 2
-                if mid > v_splits[-1] + w * 0.06:
-                    v_splits.append(mid)
-        v_splits.append(w)
-
-        for j in range(len(v_splits) - 1):
-            x1, x2 = v_splits[j], v_splits[j + 1]
-            if x2 - x1 < w * 0.04:
-                continue
-            panels.append((x1, y1, x2, y2))
-
-    if len(panels) < 2:
-        panels = [(0, 0, w, h)]
-
-    return panels
+def download_image(url):
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=15) as resp:
+        arr = np.frombuffer(resp.read(), dtype=np.uint8)
+        return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
 
-def find_bright_regions(gray, x1, y1, x2, y2):
-    """패널 내에서 밝은 영역(말풍선 후보)을 검출.
-    찾으면 해당 영역 리스트, 못 찾으면 빈 리스트 반환."""
-    roi = gray[y1:y2, x1:x2]
-    rh, rw = roi.shape
+def download_image_bytes(url):
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=15) as resp:
+        ct = resp.headers.get('Content-Type', 'image/jpeg')
+        data = resp.read()
+        return data, ct
 
-    if rh < 20 or rw < 20:
-        return []
 
-    _, binary = cv2.threshold(roi, 190, 255, cv2.THRESH_BINARY)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=4)
-    opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel, iterations=1)
-
-    contours, _ = cv2.findContours(opened, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    min_area = rh * rw * 0.02   # 패널의 2%
-    max_area = rh * rw * 0.7
-
-    regions = []
-    for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area < min_area or area > max_area:
-            continue
-
-        rx, ry, rbw, rbh = cv2.boundingRect(cnt)
-        # 너무 납작하거나 가늘면 스킵
-        if rbw < 15 or rbh < 15:
-            continue
-
-        sub_roi = roi[ry:ry+rbh, rx:rx+rbw]
-        if sub_roi.size == 0:
-            continue
-        mean_val = np.mean(sub_roi)
-        if mean_val < 140:
-            continue
-
-        # 절대 좌표로 변환
-        regions.append((x1 + rx, y1 + ry, x1 + rx + rbw, y1 + ry + rbh))
-
-    return regions
-
+# ─── OCR ───
 
 def ocr_bubbles(img_cv):
-    """패널 분할 → 밝은 영역 검출 → OCR."""
     h, w = img_cv.shape[:2]
-    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    mask, mask_refined, blk_list = ctd(img_cv)
 
-    panels = find_panels(gray, h, w)
-
-    # 읽기 순서: 위→아래, 오른→왼
     row_h = max(h // 5, 1)
-    panels.sort(key=lambda b: ((b[1]) // row_h, -(b[0])))
+    blk_list.sort(key=lambda blk: (blk.xyxy[1] // row_h, -blk.xyxy[0]))
 
     results = []
     seen = set()
 
-    for px1, py1, px2, py2 in panels:
-        # 패널 내에서 밝은 영역(말풍선) 찾기
-        bright = find_bright_regions(gray, px1, py1, px2, py2)
+    for blk in blk_list:
+        x1, y1, x2, y2 = [int(v) for v in blk.xyxy]
+        pad = 3
+        x1, y1 = max(0, x1 - pad), max(0, y1 - pad)
+        x2, y2 = min(w, x2 + pad), min(h, y2 + pad)
 
-        if bright:
-            # 밝은 영역을 읽기 순서로 정렬
-            bright.sort(key=lambda b: ((b[1] - py1) // max((py2 - py1) // 3, 1), -(b[0])))
-            for bx1, by1, bx2, by2 in bright:
-                crop = img_cv[by1:by2, bx1:bx2]
-                if crop.size == 0:
-                    continue
-                pil = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-                text = mocr(pil).strip()
-                if text and is_japanese(text) and text not in seen:
-                    seen.add(text)
-                    results.append({
-                        "text": text,
-                        "box": {
-                            "x": round(bx1 / w * 100, 2),
-                            "y": round(by1 / h * 100, 2),
-                            "w": round((bx2 - bx1) / w * 100, 2),
-                            "h": round((by2 - by1) / h * 100, 2),
-                        }
-                    })
+        crop = img_cv[y1:y2, x1:x2]
+        if crop.size == 0:
+            continue
+
+        pil = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+        text = mocr(pil).strip()
+
+        if not text or not is_japanese(text) or text in seen:
+            continue
+
+        seen.add(text)
+        results.append({
+            "text": text,
+            "box": {
+                "x": round(x1 / w * 100, 2),
+                "y": round(y1 / h * 100, 2),
+                "w": round((x2 - x1) / w * 100, 2),
+                "h": round((y2 - y1) / h * 100, 2),
+            }
+        })
+
+    return results, mask
+
+
+# ─── 번역 ───
+
+def translate_google(text):
+    import urllib.parse
+    params = urllib.parse.urlencode({
+        'client': 'gtx', 'sl': 'ja', 'tl': 'ko', 'dt': 't', 'q': text
+    })
+    url = f'https://translate.googleapis.com/translate_a/single?{params}'
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read())
+    if isinstance(data, list) and isinstance(data[0], list):
+        return ''.join(x[0] for x in data[0] if x[0])
+    return ''
+
+
+def translate_openai(bubbles, image_url=None):
+    import urllib.request
+    numbered = '\n'.join(f'{i+1}. {b["text"]}' for i, b in enumerate(bubbles))
+
+    user_content = [
+        {"type": "text", "text": f"이 만화 페이지에서 OCR로 추출한 대사 목록이야. 이미지의 장면과 맥락을 참고해서 번역해줘.\n\n{numbered}"}
+    ]
+
+    # 이미지 첨부 (Vision)
+    if image_url:
+        try:
+            img_data, ct = download_image_bytes(image_url)
+            import base64
+            b64 = base64.b64encode(img_data).decode()
+            user_content.insert(0, {
+                "type": "image_url",
+                "image_url": {"url": f"data:{ct};base64,{b64}", "detail": "low"}
+            })
+        except Exception:
+            pass
+
+    body = json.dumps({
+        "model": OPENAI_MODEL,
+        "temperature": 0.3,
+        "messages": [
+            {
+                "role": "system",
+                "content": "만화 대사 번역가. 일본어 만화 대사를 한국어로 자연스럽게 번역한다.\n- 이미지의 장면, 캐릭터 표정, 상황을 참고하여 맥락에 맞게 번역\n- 캐릭터의 말투와 감정을 살려서 번역\n- 의역보다는 원문의 뉘앙스를 유지하되 한국어로 자연스럽게\n- 효과음이나 의미없는 텍스트는 그대로 음역\n- 출력: 번호와 번역만. 설명 없이.\n- 형식: 각 줄에 \"번호. 번역\""
+            },
+            {"role": "user", "content": user_content}
+        ]
+    }).encode()
+
+    req = urllib.request.Request(
+        'https://api.openai.com/v1/chat/completions',
+        data=body,
+        headers={
+            'Authorization': f'Bearer {OPENAI_API_KEY}',
+            'Content-Type': 'application/json'
+        }
+    )
+    with urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read())
+
+    raw = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+    ko_map = {}
+    for line in raw.split('\n'):
+        import re
+        m = re.match(r'^(\d+)\.\s*(.+)', line)
+        if m:
+            ko_map[int(m.group(1))] = m.group(2).strip()
+
+    return [
+        {**b, "ko": ko_map.get(i + 1, '')}
+        for i, b in enumerate(bubbles)
+    ]
+
+
+def translate_bubbles(bubbles, image_url=None):
+    if OPENAI_API_KEY:
+        try:
+            return translate_openai(bubbles, image_url)
+        except Exception as e:
+            print(f"[translate] OpenAI failed, falling back to Google: {e}", flush=True)
+
+    result = []
+    for b in bubbles:
+        try:
+            ko = translate_google(b["text"])
+        except Exception:
+            ko = ''
+        result.append({**b, "ko": ko})
+    return result
+
+
+# ─── 이미지 합성 ───
+
+def fit_text(draw, text, box_w, box_h, font_path):
+    vertical = box_h > box_w * 1.5
+    for size in range(24, 7, -1):
+        try:
+            font = ImageFont.truetype(font_path, size)
+        except Exception:
+            continue
+        if vertical:
+            char_h = size + 2
+            chars_per_col = max(box_h // char_h, 1)
+            cols_needed = (len(text) + chars_per_col - 1) // chars_per_col
+            col_w = size + 4
+            if cols_needed * col_w <= box_w:
+                return font, text, size, True
         else:
-            # 밝은 영역 못 찾으면 패널 전체 OCR
-            crop = img_cv[py1:py2, px1:px2]
-            if crop.size == 0:
-                continue
-            pil = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-            text = mocr(pil).strip()
-            if text and is_japanese(text) and text not in seen:
-                seen.add(text)
-                results.append({
-                    "text": text,
-                    "box": {
-                        "x": round(px1 / w * 100, 2),
-                        "y": round(py1 / h * 100, 2),
-                        "w": round((px2 - px1) / w * 100, 2),
-                        "h": round((py2 - py1) / h * 100, 2),
-                    }
-                })
+            lines = wrap_text(draw, text, font, box_w - 4)
+            if len(lines) * (size + 3) <= box_h:
+                return font, "\n".join(lines), size, False
+    font = ImageFont.truetype(font_path, 8)
+    return font, text[:10], 8, False
 
-    return results
 
+def wrap_text(draw, text, font, max_width):
+    lines, current = [], ""
+    for ch in text:
+        test = current + ch
+        bbox = draw.textbbox((0, 0), test, font=font)
+        if bbox[2] - bbox[0] > max_width and current:
+            lines.append(current)
+            current = ch
+        else:
+            current = test
+    if current:
+        lines.append(current)
+    return lines
+
+
+def export_image(img_cv, mask, bubbles_with_ko):
+    h, w = img_cv.shape[:2]
+
+    if mask is not None and mask.shape[:2] == (h, w):
+        mask_bin = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)[1]
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        mask_dilated = cv2.dilate(mask_bin, kernel, iterations=1)
+        inpainted = cv2.inpaint(img_cv, mask_dilated, 3, cv2.INPAINT_TELEA)
+    else:
+        inpainted = img_cv.copy()
+
+    pil_img = Image.fromarray(cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_img)
+
+    for b in bubbles_with_ko:
+        ko = b.get("ko", "")
+        if not ko:
+            continue
+        box = b["box"]
+        x = int(box["x"] / 100 * w)
+        y = int(box["y"] / 100 * h)
+        bw = int(box["w"] / 100 * w)
+        bh = int(box["h"] / 100 * h)
+        if bw < 10 or bh < 10:
+            continue
+
+        font, fitted_text, font_size, is_vertical = fit_text(draw, ko, bw, bh, FONT_PATH)
+
+        if is_vertical:
+            char_h = font_size + 2
+            col_w = font_size + 4
+            chars_per_col = max(bh // char_h, 1)
+            chars = list(fitted_text)
+            col_idx = char_idx = 0
+            while char_idx < len(chars):
+                cx = x + bw - (col_idx + 1) * col_w + 2
+                cy = y + 2
+                for _ in range(chars_per_col):
+                    if char_idx >= len(chars):
+                        break
+                    draw.text((cx, cy), chars[char_idx], fill="black", font=font)
+                    cy += char_h
+                    char_idx += 1
+                col_idx += 1
+        else:
+            line_h = font_size + 3
+            lines = fitted_text.split("\n")
+            total_h = len(lines) * line_h
+            start_y = y + (bh - total_h) // 2
+            for i, line in enumerate(lines):
+                bbox = draw.textbbox((0, 0), line, font=font)
+                tw = bbox[2] - bbox[0]
+                tx = x + (bw - tw) // 2
+                ty = start_y + i * line_h
+                draw.text((tx, ty), line, fill="black", font=font)
+
+    return pil_img
+
+
+# ─── HTTP 핸들러 ───
 
 class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        if self.path != "/ocr":
-            self.send_error(404)
-            return
+    def do_OPTIONS(self):
+        self._cors_headers()
+        self.send_response(204)
+        self.end_headers()
 
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path == '/proxy-image':
+            qs = parse_qs(parsed.query)
+            url = qs.get('url', [''])[0]
+            if not url:
+                self._json(400, {"error": "url required"})
+                return
+            try:
+                data, ct = download_image_bytes(url)
+                self.send_response(200)
+                self._cors_headers()
+                self.send_header("Content-Type", ct)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "public, max-age=3600")
+                self.end_headers()
+                self.wfile.write(data)
+            except Exception as e:
+                self._json(500, {"error": str(e)})
+        elif parsed.path == '/health':
+            self._json(200, {"status": "ok", "openai": bool(OPENAI_API_KEY)})
+        else:
+            self.send_error(404)
+
+    def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length)) if length else {}
-        image_url = body.get("imageUrl", "")
 
+        if self.path == "/ocr":
+            self._handle_ocr(body)
+        elif self.path == "/translate":
+            self._handle_translate(body)
+        elif self.path == "/export":
+            self._handle_export(body)
+        else:
+            self.send_error(404)
+
+    def _handle_ocr(self, body):
+        image_url = body.get("imageUrl", "")
         if not image_url:
             self._json(400, {"error": "imageUrl is required"})
             return
-
         try:
-            req = Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urlopen(req, timeout=15) as resp:
-                arr = np.frombuffer(resp.read(), dtype=np.uint8)
-                img_cv = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-
+            img_cv = download_image(image_url)
             if img_cv is None:
                 self._json(500, {"error": "failed to decode image"})
                 return
-
-            bubbles = ocr_bubbles(img_cv)
-            all_text = "\n".join(b["text"] for b in bubbles)
-            self._json(200, {"bubbles": bubbles, "text": all_text})
+            bubbles, _ = ocr_bubbles(img_cv)
+            self._json(200, {"bubbles": bubbles, "text": "\n".join(b["text"] for b in bubbles)})
         except Exception as e:
             self._json(500, {"error": str(e)})
+
+    def _handle_translate(self, body):
+        image_url = body.get("imageUrl", "")
+        if not image_url:
+            self._json(400, {"error": "imageUrl is required"})
+            return
+        try:
+            img_cv = download_image(image_url)
+            if img_cv is None:
+                self._json(500, {"error": "failed to decode image"})
+                return
+            bubbles, _ = ocr_bubbles(img_cv)
+            if not bubbles:
+                self._json(200, {"bubbles": [], "text": ""})
+                return
+            translated = translate_bubbles(bubbles, image_url)
+            self._json(200, {
+                "bubbles": translated,
+                "text": "\n".join(b.get("ko", "") for b in translated)
+            })
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def _handle_export(self, body):
+        image_url = body.get("imageUrl", "")
+        bubbles = body.get("bubbles", [])
+        if not image_url:
+            self._json(400, {"error": "imageUrl is required"})
+            return
+        try:
+            img_cv = download_image(image_url)
+            if img_cv is None:
+                self._json(500, {"error": "failed to decode image"})
+                return
+            mask, _, _ = ctd(img_cv)
+            result = export_image(img_cv, mask, bubbles)
+            buf = io.BytesIO()
+            result.save(buf, format="JPEG", quality=92)
+            data = buf.getvalue()
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def _cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _json(self, code, obj):
         data = json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(code)
+        self._cors_headers()
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
     def log_message(self, fmt, *args):
-        print(f"[ocr] {fmt % args}", flush=True)
+        print(f"[server] {fmt % args}", flush=True)
 
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8789
     server = HTTPServer(("127.0.0.1", port), Handler)
-    print(f"OCR server listening on :{port}", flush=True)
+    print(f"Server listening on :{port}", flush=True)
     server.serve_forever()

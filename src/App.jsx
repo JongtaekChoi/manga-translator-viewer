@@ -76,6 +76,30 @@ export default function App() {
     setTranslatingAll(false)
   }
 
+  const exportPage = async (page) => {
+    if (!page.bubbles?.length) return
+    setPageBusy(prev => ({ ...prev, [`exp-${page.idx}`]: true }))
+    try {
+      const r = await fetch('/api/export-page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: page.imageUrl, bubbles: page.bubbles })
+      })
+      if (!r.ok) throw new Error('export failed')
+      const blob = await r.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `page-${page.idx}-ko.jpg`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      alert(`내보내기 실패: ${e.message}`)
+    } finally {
+      setPageBusy(prev => ({ ...prev, [`exp-${page.idx}`]: false }))
+    }
+  }
+
   const untranslatedCount = pages.filter(p => !p.ko).length
 
   return (
@@ -128,6 +152,11 @@ export default function App() {
                 <button onClick={() => translatePage(p)} disabled={pageBusy[p.idx] || translatingAll}>
                   {pageBusy[p.idx] ? '번역중...' : '이 페이지 번역'}
                 </button>
+                {p.bubbles?.length > 0 && (
+                  <button className="btn-export" onClick={() => exportPage(p)} disabled={pageBusy[`exp-${p.idx}`]}>
+                    {pageBusy[`exp-${p.idx}`] ? '생성중...' : '이미지 내보내기'}
+                  </button>
+                )}
               </div>
               {p.bubbles?.length > 0 && (
                 <details className="bubble-details">

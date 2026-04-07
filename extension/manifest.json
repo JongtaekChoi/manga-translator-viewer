@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Manga Translator",
+  "version": "0.1.0",
+  "description": "만화 페이지의 말풍선을 자동 검출하고 한국어로 번역하여 오버레이합니다.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["http://localhost:8789/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Manga Translator"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
