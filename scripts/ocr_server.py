@@ -23,6 +23,16 @@ CTD_DIR = os.path.join(os.path.dirname(__file__), '..', '.venv', 'comic-text-det
 sys.path.insert(0, CTD_DIR)
 from inference import TextDetector
 
+# .env 로드
+from pathlib import Path
+_env_path = Path(__file__).resolve().parent.parent / '.env'
+if _env_path.exists():
+    for line in _env_path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            k, v = line.split('=', 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
 # 환경변수
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
