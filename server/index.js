@@ -72,21 +72,27 @@ app.get('/api/extract-images', async (req, res) => {
           const img = `http://galaxyheavyblow.web.fc2.com/fc2-imageviewer/${aid}/${iid}/${n}.jpg`
           try {
             const r = await axios.head(img, {
-              timeout: 1800,
-              validateStatus: () => true,
+              timeout: 3000,
+              maxRedirects: 5,
               headers: { 'User-Agent': 'Mozilla/5.0' }
             })
             const ct = r.headers['content-type'] || ''
             const len = Number(r.headers['content-length'] || 0)
-            if (r.status === 200 && ct.includes('image') && len > 1000) hit.set(n, img)
+            if (ct.includes('image') && len > 1000) hit.set(n, img)
           } catch {}
         }))
       }
 
       const images = []
+      let misses = 0
       for (let n = 1; n <= maxProbe; n++) {
-        if (!hit.has(n)) break
-        images.push(hit.get(n))
+        if (hit.has(n)) {
+          images.push(hit.get(n))
+          misses = 0
+        } else {
+          misses++
+          if (misses >= 3) break  // 연속 3개 없으면 종료
+        }
       }
 
       if (images.length) return res.json({ count: images.length, images, mode: 'fc2-fast' })
