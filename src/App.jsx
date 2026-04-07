@@ -6,7 +6,13 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [translatingAll, setTranslatingAll] = useState(false)
   const [pageBusy, setPageBusy] = useState({})
-  const [showOverlay, setShowOverlay] = useState(true)
+  // 각 말풍선의 번역 표시 상태: { "pageIdx-bubbleIdx": true/false }
+  const [visibleBubbles, setVisibleBubbles] = useState({})
+
+  const toggleBubble = (pageIdx, bubbleIdx) => {
+    const key = `${pageIdx}-${bubbleIdx}`
+    setVisibleBubbles(prev => ({ ...prev, [key]: !prev[key] }))
+  }
 
   const fetchPages = async () => {
     setLoading(true)
@@ -18,7 +24,6 @@ export default function App() {
       }))
       setPages(newPages)
 
-      // 저장된 번역이 있으면 자동 로드
       try {
         const tr = await fetch(`/api/translations?sourceUrl=${encodeURIComponent(url)}`)
         const trData = await tr.json()
@@ -85,10 +90,6 @@ export default function App() {
           <button onClick={translateAll} disabled={!pages.length || translatingAll || !untranslatedCount}>
             {translatingAll ? '번역중...' : `전체 번역 (${untranslatedCount})`}
           </button>
-          <label className="toggle">
-            <input type="checkbox" checked={showOverlay} onChange={e => setShowOverlay(e.target.checked)} />
-            오버레이
-          </label>
         </div>
       </header>
 
@@ -97,20 +98,25 @@ export default function App() {
           <article key={p.idx} className="card">
             <div className="img-wrap">
               <img src={`/api/proxy-image?url=${encodeURIComponent(p.imageUrl)}`} alt={`p${p.idx}`} loading="lazy" />
-              {showOverlay && p.bubbles?.map((b, i) => (
-                <div
-                  key={i}
-                  className="bubble-overlay"
-                  style={{
-                    left: `${b.box.x}%`,
-                    top: `${b.box.y}%`,
-                    width: `${b.box.w}%`,
-                    height: `${b.box.h}%`,
-                  }}
-                >
-                  <span className="bubble-text">{b.ko}</span>
-                </div>
-              ))}
+              {p.bubbles?.map((b, i) => {
+                const key = `${p.idx}-${i}`
+                const shown = !!visibleBubbles[key]
+                return (
+                  <div
+                    key={i}
+                    className={`bubble-overlay ${shown ? 'active' : ''}`}
+                    style={{
+                      left: `${b.box.x}%`,
+                      top: `${b.box.y}%`,
+                      width: `${b.box.w}%`,
+                      height: `${b.box.h}%`,
+                    }}
+                    onClick={() => toggleBubble(p.idx, i)}
+                  >
+                    {shown && <span className="bubble-text">{b.ko}</span>}
+                  </div>
+                )
+              })}
             </div>
             <div className="meta">
               <h3>
@@ -124,11 +130,14 @@ export default function App() {
                 </button>
               </div>
               {p.bubbles?.length > 0 && (
-                <div className="bubble-list">
-                  {p.bubbles.map((b, i) => (
-                    <p key={i}><span className="jp">{b.text}</span> → <span className="ko">{b.ko}</span></p>
-                  ))}
-                </div>
+                <details className="bubble-details">
+                  <summary>번역 {p.bubbles.length}건</summary>
+                  <div className="bubble-list">
+                    {p.bubbles.map((b, i) => (
+                      <p key={i}><span className="jp">{b.text}</span> → <span className="ko">{b.ko}</span></p>
+                    ))}
+                  </div>
+                </details>
               )}
             </div>
           </article>

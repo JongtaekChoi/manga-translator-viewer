@@ -7,20 +7,22 @@ body{margin:0;background:#101114;color:#f3f3f3;font-family:-apple-system,BlinkMa
 .controls input{flex:1;min-width:240px;padding:10px;border-radius:10px;border:1px solid #3a3f4b;background:#0f1116;color:#f2f2f2}
 .controls button{padding:10px 12px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:600}
 .controls button:disabled{opacity:.6}
-.toggle{display:flex;align-items:center;gap:4px;font-size:13px;color:#94a3b8;cursor:pointer;white-space:nowrap}
-.toggle input{accent-color:#2563eb}
 main{padding:10px}
 .card{margin:12px 0;background:#17191f;border:1px solid #2a2e37;border-radius:12px;overflow:hidden}
 .img-wrap{position:relative;line-height:0}
 .img-wrap img{display:block;width:100%;height:auto;background:#000}
-.bubble-overlay{position:absolute;display:flex;align-items:center;justify-content:center;pointer-events:none}
-.bubble-text{background:rgba(255,255,255,0.92);color:#111;font-size:clamp(9px,1.4vw,14px);font-weight:600;line-height:1.3;padding:2px 4px;border-radius:4px;text-align:center;max-width:100%;overflow:hidden;word-break:keep-all}
+.bubble-overlay{position:absolute;cursor:pointer;border:1.5px dashed rgba(100,180,255,0.35);border-radius:4px;background:rgba(100,180,255,0.06);transition:background .15s,border-color .15s}
+.bubble-overlay:hover{background:rgba(100,180,255,0.15);border-color:rgba(100,180,255,0.6)}
+.bubble-overlay.active{background:rgba(0,0,0,0.7);border-color:rgba(100,180,255,0.7);display:flex;align-items:center;justify-content:center}
+.bubble-text{color:#fff;font-size:clamp(9px,1.4vw,14px);font-weight:600;line-height:1.3;padding:3px 5px;text-align:center;word-break:keep-all;text-shadow:0 1px 3px rgba(0,0,0,0.8)}
 .meta{padding:10px 12px}
 .meta h3{margin:0 0 6px;font-size:14px;color:#9ca3af}
 .row-actions{margin:0 0 8px}
 .row-actions button{padding:7px 10px;border:0;border-radius:8px;background:#0ea5e9;color:#fff;font-weight:600}
 .row-actions button:disabled{opacity:.6}
-.bubble-list{margin:4px 0 0;font-size:13px;line-height:1.5}
+.bubble-details{margin:4px 0 0}
+.bubble-details summary{cursor:pointer;color:#94a3b8;font-size:13px;padding:4px 0}
+.bubble-list{font-size:13px;line-height:1.5;padding:4px 0}
 .bubble-list p{margin:2px 0}
 .bubble-list .jp{color:#9ca3af}
 .bubble-list .ko{color:#e2e8f0}
