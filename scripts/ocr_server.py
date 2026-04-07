@@ -124,7 +124,7 @@ def translate_google(text):
     return ''
 
 
-def translate_openai(bubbles, image_url=None):
+def translate_openai(bubbles, image_url=None, context=''):
     import urllib.request
     numbered = '\n'.join(f'{i+1}. {b["text"]}' for i, b in enumerate(bubbles))
 
@@ -145,14 +145,23 @@ def translate_openai(bubbles, image_url=None):
         except Exception:
             pass
 
+    system_prompt = [
+        "만화 대사 번역가. 일본어 만화 대사를 한국어로 자연스럽게 번역한다.",
+        "- 이미지의 장면, 캐릭터 표정, 상황을 참고하여 맥락에 맞게 번역",
+        "- 캐릭터의 말투와 감정을 살려서 번역",
+        "- 의역보다는 원문의 뉘앙스를 유지하되 한국어로 자연스럽게",
+        "- 효과음이나 의미없는 텍스트는 그대로 음역",
+        "- 출력: 번호와 번역만. 설명 없이.",
+        "- 형식: 각 줄에 \"번호. 번역\""
+    ]
+    if context:
+        system_prompt.append(f"\n[작품 정보]\n{context}")
+
     body = json.dumps({
         "model": OPENAI_MODEL,
         "temperature": 0.3,
         "messages": [
-            {
-                "role": "system",
-                "content": "만화 대사 번역가. 일본어 만화 대사를 한국어로 자연스럽게 번역한다.\n- 이미지의 장면, 캐릭터 표정, 상황을 참고하여 맥락에 맞게 번역\n- 캐릭터의 말투와 감정을 살려서 번역\n- 의역보다는 원문의 뉘앙스를 유지하되 한국어로 자연스럽게\n- 효과음이나 의미없는 텍스트는 그대로 음역\n- 출력: 번호와 번역만. 설명 없이.\n- 형식: 각 줄에 \"번호. 번역\""
-            },
+            {"role": "system", "content": "\n".join(system_prompt)},
             {"role": "user", "content": user_content}
         ]
     }).encode()
@@ -182,10 +191,10 @@ def translate_openai(bubbles, image_url=None):
     ]
 
 
-def translate_bubbles(bubbles, image_url=None):
+def translate_bubbles(bubbles, image_url=None, context=''):
     if OPENAI_API_KEY:
         try:
-            return translate_openai(bubbles, image_url)
+            return translate_openai(bubbles, image_url, context)
         except Exception as e:
             print(f"[translate] OpenAI failed, falling back to Google: {e}", flush=True)
 
@@ -339,6 +348,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_translate(body)
         elif self.path == "/export":
             self._handle_export(body)
+        elif self.path == "/generate-context":
+            self._handle_generate_context(body)
         else:
             self.send_error(404)
 
@@ -359,6 +370,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_translate(self, body):
         image_url = body.get("imageUrl", "")
+        context = body.get("context", "")
         if not image_url:
             self._json(400, {"error": "imageUrl is required"})
             return
@@ -371,7 +383,7 @@ class Handler(BaseHTTPRequestHandler):
             if not bubbles:
                 self._json(200, {"bubbles": [], "text": ""})
                 return
-            translated = translate_bubbles(bubbles, image_url)
+            translated = translate_bubbles(bubbles, image_url, context)
             self._json(200, {
                 "bubbles": translated,
                 "text": "\n".join(b.get("ko", "") for b in translated)
@@ -401,6 +413,51 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def _handle_generate_context(self, body):
+        work_name = body.get("workName", "").strip()
+        if not work_name:
+            self._json(400, {"error": "workName is required"})
+            return
+        if not OPENAI_API_KEY:
+            self._json(400, {"error": "OpenAI API key not set"})
+            return
+
+        try:
+            import urllib.request
+            prompt = f"""만화/웹툰 "{work_name}"의 번역에 필요한 정보를 정리해줘.
+
+아래 항목을 포함해서 간결하게 작성:
+1. 주요 캐릭터 이름 (일본어 → 한국어 공식 명칭)
+2. 주요 용어/고유명사 (일본어 → 한국어)
+3. 캐릭터별 말투 특징 (반말/존댓말, 특유의 어투)
+4. 세계관 핵심 설정 (한 줄 요약)
+
+간결하게, 번역 참고용으로만 작성해."""
+
+            req_body = json.dumps({
+                "model": OPENAI_MODEL,
+                "temperature": 0.3,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
+            }).encode()
+
+            req = urllib.request.Request(
+                'https://api.openai.com/v1/chat/completions',
+                data=req_body,
+                headers={
+                    'Authorization': f'Bearer {OPENAI_API_KEY}',
+                    'Content-Type': 'application/json'
+                }
+            )
+            with urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read())
+
+            context = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            self._json(200, {"context": context})
         except Exception as e:
             self._json(500, {"error": str(e)})
 

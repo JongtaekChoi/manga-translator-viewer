@@ -4,15 +4,24 @@
   <meta charset="UTF-8">
   <style>
     * { box-sizing: border-box; margin: 0; }
-    body { width: 280px; padding: 16px; font-family: -apple-system, 'Apple SD Gothic Neo', sans-serif; background: #17191f; color: #f3f3f3; }
+    body { width: 320px; padding: 16px; font-family: -apple-system, 'Apple SD Gothic Neo', sans-serif; background: #17191f; color: #f3f3f3; }
     h2 { font-size: 16px; margin-bottom: 12px; }
     .status { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px; }
     .dot { width: 10px; height: 10px; border-radius: 50%; }
     .dot.ok { background: #22c55e; }
     .dot.err { background: #ef4444; }
-    .info { font-size: 12px; color: #94a3b8; margin-bottom: 8px; line-height: 1.4; }
-    button { width: 100%; padding: 10px; border: none; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 8px; }
+    .info { font-size: 12px; color: #94a3b8; margin-bottom: 10px; line-height: 1.4; }
+    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; margin-top: 10px; }
+    .row { display: flex; gap: 6px; }
+    .row input { flex: 1; }
+    input, textarea { width: 100%; padding: 8px; border: 1px solid #3a3f4b; border-radius: 8px; background: #0f1116; color: #f2f2f2; font-size: 13px; font-family: inherit; }
+    textarea { min-height: 100px; resize: vertical; margin-top: 4px; }
+    button { width: 100%; padding: 10px; border: none; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; margin-top: 8px; }
     button:disabled { opacity: 0.5; }
+    .btn-sm { padding: 8px; font-size: 12px; width: auto; flex-shrink: 0; }
+    .btn-green { background: #16a34a; }
+    .btn-purple { background: #7c3aed; }
+    .saved { font-size: 11px; color: #22c55e; margin-top: 4px; display: none; }
   </style>
 </head>
 <body>
@@ -22,6 +31,18 @@
     <span id="status-text">확인 중...</span>
   </div>
   <div class="info" id="info"></div>
+
+  <label>작품명</label>
+  <div class="row">
+    <input id="work-name" placeholder="예: 원펀맨" />
+    <button class="btn-sm btn-purple" id="generate-ctx">AI 생성</button>
+  </div>
+
+  <label>작품 컨텍스트 (번역 시 참고)</label>
+  <textarea id="context" placeholder="캐릭터 이름, 용어, 말투 등..."></textarea>
+  <div class="saved" id="saved-msg">저장됨</div>
+  <button class="btn-green" id="save-ctx">컨텍스트 저장</button>
+
   <button id="translate-all">현재 페이지 전체 번역</button>
 
   <script src="popup.js"></script>
