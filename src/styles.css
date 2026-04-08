@@ -22,8 +22,8 @@ main{padding:10px}
 .img-wrap img{display:block;width:100%;height:auto;background:#000}
 .bubble-overlay{position:absolute;cursor:pointer;border:1.5px dashed rgba(100,180,255,0.35);border-radius:4px;background:rgba(100,180,255,0.06);transition:background .15s,border-color .15s}
 .bubble-overlay:hover{background:rgba(100,180,255,0.15);border-color:rgba(100,180,255,0.6)}
-.bubble-overlay.active{background:rgba(0,0,0,0.65);border-color:rgba(100,180,255,0.7);display:flex;align-items:center;justify-content:center;overflow:visible;z-index:10}
-.bubble-text{color:#fff;font-size:clamp(9px,1.4vw,14px);font-weight:700;line-height:1.35;padding:4px 6px;text-align:center;word-break:keep-all;-webkit-text-stroke:0.5px rgba(0,0,0,0.6);text-shadow:0 0 4px rgba(0,0,0,0.9),0 1px 2px rgba(0,0,0,0.9);background:rgba(0,0,0,0.55);border-radius:4px;max-width:150%}
+.bubble-overlay.active{background:rgba(0,0,0,0.75);border-color:rgba(100,180,255,0.7);display:flex;align-items:center;justify-content:center;z-index:10;min-width:fit-content;min-height:fit-content;padding:4px}
+.bubble-text{color:#fff;font-size:clamp(9px,1.4vw,14px);font-weight:700;line-height:1.4;text-align:center;word-break:break-word;text-shadow:0 0 4px rgba(0,0,0,0.9),0 1px 2px rgba(0,0,0,0.9)}
 .meta{padding:10px 12px}
 .meta h3{margin:0 0 6px;font-size:14px;color:#9ca3af}
 .row-actions{margin:0 0 8px}
