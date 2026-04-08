@@ -62,6 +62,21 @@ app.get('/api/extract-images', async (req, res) => {
     const m = String(url).match(/aid=(\d+).*iid=(\d+)/)
     if (m) {
       const [, aid, iid] = m
+      const baseUrl = `http://galaxyheavyblow.web.fc2.com/fc2-imageviewer/${aid}/${iid}`
+
+      // metadata.json에서 정확한 이미지 순서 가져오기
+      try {
+        const { data: meta } = await axios.get(`${baseUrl}/metadata.json`, {
+          timeout: 5000,
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        })
+        if (meta?.imageItemList?.length) {
+          const images = meta.imageItemList.map(item => `${baseUrl}/${item.fileName}`)
+          return res.json({ count: images.length, images, mode: 'fc2-metadata' })
+        }
+      } catch {}
+
+      // metadata.json 실패 시 fallback: probe 방식
       const maxProbe = 80
       const batchSize = 10
       const hit = new Map()
@@ -69,7 +84,7 @@ app.get('/api/extract-images', async (req, res) => {
       for (let start = 1; start <= maxProbe; start += batchSize) {
         const batch = Array.from({ length: batchSize }, (_, k) => start + k).filter(n => n <= maxProbe)
         await Promise.all(batch.map(async (n) => {
-          const img = `http://galaxyheavyblow.web.fc2.com/fc2-imageviewer/${aid}/${iid}/${n}.jpg`
+          const img = `${baseUrl}/${n}.jpg`
           try {
             const r = await axios.head(img, {
               timeout: 3000,
@@ -91,11 +106,11 @@ app.get('/api/extract-images', async (req, res) => {
           misses = 0
         } else {
           misses++
-          if (misses >= 3) break  // 연속 3개 없으면 종료
+          if (misses >= 3) break
         }
       }
 
-      if (images.length) return res.json({ count: images.length, images, mode: 'fc2-fast' })
+      if (images.length) return res.json({ count: images.length, images, mode: 'fc2-probe' })
     }
 
     const { data: html } = await axios.get(url, {

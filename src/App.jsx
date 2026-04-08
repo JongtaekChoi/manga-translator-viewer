@@ -94,10 +94,18 @@ export default function App() {
   const translatePage = async (page) => {
     setPageBusy(prev => ({ ...prev, [page.idx]: true }))
     try {
+      // 이전 페이지 번역 결과를 컨텍스트로 포함 (최근 3페이지)
+      const prevPages = pages
+        .filter(p => p.idx < page.idx && p.bubbles?.length > 0)
+        .slice(-3)
+        .map(p => `[${p.idx}p] ${p.bubbles.map(b => b.ko).filter(Boolean).join(' / ')}`)
+        .join('\n')
+      const fullContext = [context, prevPages ? `\n[이전 페이지 대사]\n${prevPages}` : ''].join('')
+
       const r = await fetch('/api/translate-page', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: page.imageUrl, idx: page.idx, sourceUrl: url, context })
+        body: JSON.stringify({ imageUrl: page.imageUrl, idx: page.idx, sourceUrl: url, context: fullContext })
       })
       const data = await r.json()
       if (!r.ok) throw new Error(data?.error || 'failed')
