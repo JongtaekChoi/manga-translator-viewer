@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>개인정보 처리방침 · 만화 번역 뷰어</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      html,body{background:#0b0c0f;color:#f3f3f3;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;line-height:1.7}
+      a{color:#60a5fa}
+      .container{max-width:760px;margin:0 auto;padding:40px 20px 80px}
+      nav{padding:16px 0;border-bottom:1px solid #1e2027;margin-bottom:40px}
+      nav .inner{max-width:760px;margin:0 auto;padding:0 20px;display:flex;justify-content:space-between;align-items:center}
+      nav .brand{font-weight:700;font-size:16px;text-decoration:none;color:inherit}
+      nav .back{color:#94a3b8;text-decoration:none;font-size:14px}
+      nav .back:hover{color:#f3f3f3}
+      h1{font-size:32px;font-weight:800;margin-bottom:8px;letter-spacing:-0.02em}
+      .updated{color:#64748b;font-size:14px;margin-bottom:32px}
+      h2{font-size:20px;font-weight:700;margin:32px 0 12px;color:#e2e8f0}
+      p{color:#cbd5e1;margin-bottom:12px;font-size:15px}
+      ul{margin:8px 0 16px 20px;color:#cbd5e1;font-size:15px}
+      li{margin-bottom:6px}
+      code{background:#13151a;padding:2px 6px;border-radius:4px;font-size:13px;color:#a78bfa;font-family:ui-monospace,Menlo,monospace}
+      strong{color:#f3f3f3}
+    </style>
+  </head>
+  <body>
+    <nav>
+      <div class="inner">
+        <a class="brand" href="../">🗨️ 만화 번역 뷰어</a>
+        <a class="back" href="../">← 홈으로</a>
+      </div>
+    </nav>
+
+    <main class="container">
+      <h1>개인정보 처리방침</h1>
+      <div class="updated">최종 업데이트: 2026년 4월 15일</div>
+
+      <p>
+        만화 번역 뷰어(이하 "본 확장")는 이용자의 프라이버시를 최우선으로 고려하여 설계되었습니다.
+        본 확장은 자체 서버를 운영하지 않으며, 이용자의 어떠한 개인정보도 수집·저장·전송하지 않습니다.
+      </p>
+
+      <h2>1. 수집하는 정보</h2>
+      <p><strong>본 확장은 이용자로부터 어떠한 개인정보도 수집하지 않습니다.</strong></p>
+      <ul>
+        <li>개인 식별 정보(이름, 이메일, 연락처 등)를 요청하거나 수집하지 않습니다.</li>
+        <li>이용자의 열람 기록, 방문 페이지, 검색어 등 활동 데이터를 추적하지 않습니다.</li>
+        <li>분석 도구(Google Analytics 등) 또는 제3자 추적 스크립트를 사용하지 않습니다.</li>
+      </ul>
+
+      <h2>2. 이용자가 직접 제공하는 정보의 저장</h2>
+      <p>아래 정보는 이용자가 확장을 사용하기 위해 직접 입력하는 것으로, <strong>이용자의 브라우저 로컬 저장소(<code>chrome.storage.local</code> / <code>localStorage</code>)에만 저장</strong>됩니다.</p>
+      <ul>
+        <li><strong>OpenAI API 키</strong> — 번역 요청을 위해 필요합니다. 이용자 본인이 OpenAI로부터 발급받은 키로, 본 확장 개발자에게 전송되지 않습니다.</li>
+        <li><strong>작품 컨텍스트</strong> — 이용자가 입력한 작품명·용어·말투 등 번역 참고 정보.</li>
+        <li><strong>모델 선택 값</strong> — 사용하려는 OpenAI 모델명(예: gpt-4o-mini).</li>
+      </ul>
+      <p>이 정보들은 이용자의 브라우저를 벗어나지 않습니다. 확장을 제거하거나 브라우저 데이터를 삭제하면 모두 제거됩니다.</p>
+
+      <h2>3. 제3자 서비스와의 데이터 전송</h2>
+      <p>본 확장은 만화 이미지 번역 기능을 제공하기 위해 <strong>OpenAI API</strong>(<code>https://api.openai.com</code>)에 직접 요청을 보냅니다. 전송되는 데이터는 다음과 같습니다.</p>
+      <ul>
+        <li>이용자가 "번역" 버튼을 클릭한 <strong>만화 이미지</strong> (base64 인코딩)</li>
+        <li>이용자가 입력한 <strong>작품 컨텍스트</strong>(있는 경우)</li>
+        <li>이용자의 <strong>OpenAI API 키</strong> (인증 헤더)</li>
+      </ul>
+      <p>
+        이 데이터는 OpenAI의 <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener">개인정보 처리방침</a> 및
+        <a href="https://openai.com/policies/api-data-usage-policies/" target="_blank" rel="noopener">API 데이터 이용 정책</a>에 따라 처리됩니다.
+        본 확장 개발자는 OpenAI에 전송된 데이터에 접근할 수 없습니다.
+      </p>
+
+      <h2>4. 본 확장이 요구하는 권한</h2>
+      <ul>
+        <li><code>activeTab</code> — 이용자가 확장 아이콘을 클릭했을 때에만 현재 탭에 접근합니다.</li>
+        <li><code>storage</code> — 이용자의 설정(API 키 등)을 브라우저 로컬에 저장합니다.</li>
+        <li><code>host_permissions: &lt;all_urls&gt;</code> — 만화 이미지를 가져와 번역하기 위해 필요합니다. 어떤 데이터도 외부로 전송하지 않습니다.</li>
+        <li><code>host_permissions: api.openai.com</code> — OpenAI API를 호출하기 위해 필요합니다.</li>
+      </ul>
+
+      <h2>5. 데이터 보안</h2>
+      <p>
+        모든 민감 정보는 이용자의 브라우저 로컬에만 저장되며, 본 확장 개발자의 서버로 전송되지 않습니다.
+        OpenAI로의 통신은 HTTPS로 암호화됩니다. 이용자는 언제든 브라우저 설정에서 확장의 저장 데이터를 삭제할 수 있습니다.
+      </p>
+
+      <h2>6. 어린이 개인정보 보호</h2>
+      <p>본 확장은 만 14세 미만의 어린이로부터 개인정보를 의도적으로 수집하지 않습니다.</p>
+
+      <h2>7. 방침 변경</h2>
+      <p>
+        본 방침은 법령 또는 서비스 변경에 따라 수정될 수 있습니다.
+        변경 사항은 본 페이지를 통해 공지됩니다.
+      </p>
+
+      <h2>8. 연락처</h2>
+      <p>
+        문의사항은 <a href="https://github.com/JongtaekChoi/manga-translator-viewer/issues" target="_blank" rel="noopener">GitHub Issues</a>를 통해 전달해 주세요.
+      </p>
+    </main>
+  </body>
+</html>
