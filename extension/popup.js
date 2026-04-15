@@ -1,6 +1,9 @@
 const dot = document.getElementById('dot')
 const statusText = document.getElementById('status-text')
 const info = document.getElementById('info')
+const apiKeyInput = document.getElementById('api-key')
+const saveKeyBtn = document.getElementById('save-key')
+const modelSelect = document.getElementById('model-select')
 const translateAllBtn = document.getElementById('translate-all')
 const workNameInput = document.getElementById('work-name')
 const contextArea = document.getElementById('context')
@@ -8,28 +11,46 @@ const saveCtxBtn = document.getElementById('save-ctx')
 const generateCtxBtn = document.getElementById('generate-ctx')
 const savedMsg = document.getElementById('saved-msg')
 
-// 서버 상태 확인
-chrome.runtime.sendMessage({ type: 'health' }, (res) => {
-  if (res?.ok) {
+// 설정 로드
+chrome.storage.local.get(['openai_api_key', 'openai_model', 'currentWork', 'contexts'], (data) => {
+  if (data.openai_api_key) {
+    apiKeyInput.value = data.openai_api_key
     dot.className = 'dot ok'
-    statusText.textContent = '서버 연결됨'
-    info.textContent = res.data.openai ? 'OpenAI API 활성' : 'Google Translate 사용 중'
+    statusText.textContent = 'API 키 설정됨'
+    info.textContent = `모델: ${data.openai_model || 'gpt-4o-mini'}`
     translateAllBtn.disabled = false
   } else {
     dot.className = 'dot err'
-    statusText.textContent = '서버 연결 실패'
-    info.textContent = 'Python 서버가 실행 중인지 확인하세요.'
+    statusText.textContent = 'API 키 미설정'
+    info.textContent = 'OpenAI API 키를 입력하세요.'
     translateAllBtn.disabled = true
   }
-})
 
-// 저장된 작품 컨텍스트 로드
-chrome.storage.local.get(['currentWork', 'contexts'], (data) => {
+  modelSelect.value = data.openai_model || 'gpt-4o-mini'
+
   const current = data.currentWork || ''
   workNameInput.value = current
   if (current && data.contexts?.[current]) {
     contextArea.value = data.contexts[current]
   }
+})
+
+// API 키 저장
+saveKeyBtn.addEventListener('click', () => {
+  const key = apiKeyInput.value.trim()
+  chrome.storage.local.set({ openai_api_key: key }, () => {
+    dot.className = key ? 'dot ok' : 'dot err'
+    statusText.textContent = key ? 'API 키 설정됨' : 'API 키 미설정'
+    translateAllBtn.disabled = !key
+    savedMsg.style.display = 'block'
+    setTimeout(() => { savedMsg.style.display = 'none' }, 1500)
+  })
+})
+
+// 모델 변경
+modelSelect.addEventListener('change', () => {
+  chrome.storage.local.set({ openai_model: modelSelect.value })
+  info.textContent = `모델: ${modelSelect.value}`
 })
 
 // 작품명 변경 시 해당 컨텍스트 로드
@@ -79,7 +100,6 @@ generateCtxBtn.addEventListener('click', () => {
 // 현재 페이지 전체 번역
 translateAllBtn.addEventListener('click', async () => {
   const name = workNameInput.value.trim()
-  // 현재 작품명 저장
   if (name) {
     chrome.storage.local.set({ currentWork: name })
   }

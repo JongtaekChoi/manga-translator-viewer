@@ -3,10 +3,22 @@ body{margin:0;background:#101114;color:#f3f3f3;font-family:-apple-system,BlinkMa
 .wrap{max-width:920px;margin:0 auto}
 .top{position:sticky;top:0;background:#17191f;border-bottom:1px solid #2a2e37;padding:10px 12px;z-index:10}
 .top h1{margin:0 0 8px;font-size:18px}
-.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.controls input{flex:1;min-width:240px;padding:10px;border-radius:10px;border:1px solid #3a3f4b;background:#0f1116;color:#f2f2f2}
-.controls button{padding:10px 12px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:600}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.controls button{padding:10px 12px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:600;cursor:pointer}
 .controls button:disabled{opacity:.6}
+.btn-danger{background:#dc2626 !important}
+.settings-panel{margin-top:10px;border:1px solid #2a2e37;border-radius:10px;background:#11151d}
+.settings-panel summary{cursor:pointer;padding:8px 10px;font-size:13px;color:#94a3b8}
+.settings-body{padding:0 10px 10px}
+.settings-row{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+.settings-row input{flex:1;padding:8px;border:1px solid #3a3f4b;border-radius:8px;background:#0f1116;color:#f2f2f2;font-size:13px}
+.settings-row label{font-size:12px;color:#94a3b8;white-space:nowrap}
+.settings-row select{flex:1;padding:8px;border:1px solid #3a3f4b;border-radius:8px;background:#0f1116;color:#f2f2f2;font-size:13px}
+.settings-note{font-size:11px;color:#64748b;margin:4px 0 0}
+.drop-zone{margin-top:10px;border:2px dashed #3a3f4b;border-radius:12px;padding:24px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.drop-zone:hover,.drop-zone.dragging{border-color:#2563eb;background:rgba(37,99,235,0.08)}
+.drop-zone p{margin:0;color:#94a3b8;font-size:14px}
+.drop-hint{font-size:12px !important;color:#64748b !important;margin-top:4px !important}
 .ctx-panel{margin-top:10px;border:1px solid #2a2e37;border-radius:10px;background:#11151d}
 .ctx-panel summary{cursor:pointer;padding:8px 10px;font-size:13px;color:#94a3b8}
 .ctx-body{padding:0 10px 10px}

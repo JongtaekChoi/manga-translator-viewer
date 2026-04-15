@@ -3,10 +3,8 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  base: '/manga-translator-viewer/',
   server: {
-    port: 5174,
-    proxy: {
-      '/api': 'http://localhost:8788'
-    }
+    port: 5174
   }
 })

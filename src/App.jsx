@@ -1,53 +1,64 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { translateImage, generateContext as apiGenerateContext, imageToBase64 } from './lib/openai'
+import { getApiKey, saveApiKey, getModel, saveModel, loadContext, saveContext as storeContext } from './lib/storage'
+import { exportTranslatedImage } from './lib/export'
+
+const SAMPLE_IMAGES = [
+  'samples/sample-1.jpg',
+  'samples/sample-2.jpg',
+]
 
 export default function App() {
-  const [url, setUrl] = useState('http://galaxyheavyblow.web.fc2.com/fc2-imageviewer/?aid=1&iid=159')
   const [pages, setPages] = useState([])
-  const [loading, setLoading] = useState(false)
   const [translatingAll, setTranslatingAll] = useState(false)
   const [pageBusy, setPageBusy] = useState({})
   const [visibleBubbles, setVisibleBubbles] = useState({})
+
+  // 설정
+  const [apiKey, setApiKey] = useState(() => getApiKey())
+  const [model, setModelState] = useState(() => getModel())
+  const [keyInput, setKeyInput] = useState(() => getApiKey())
 
   // 작품 컨텍스트
   const [workName, setWorkName] = useState('')
   const [context, setContext] = useState('')
   const [generatingCtx, setGeneratingCtx] = useState(false)
 
+  // 드래그앤드롭
+  const [dragging, setDragging] = useState(false)
+  const fileInputRef = useRef(null)
+
   // localStorage에서 작품 컨텍스트 복원
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('mangaCtx') || '{}')
-      if (saved.workName) setWorkName(saved.workName)
-      if (saved.context) setContext(saved.context)
-    } catch {}
+    const saved = loadContext()
+    if (saved.workName) setWorkName(saved.workName)
+    if (saved.context) setContext(saved.context)
   }, [])
 
-  const saveContext = () => {
-    if (!workName.trim()) { alert('작품명을 입력하세요'); return }
-    localStorage.setItem('mangaCtx', JSON.stringify({ workName, context }))
-    alert('저장됨')
+  const handleSaveKey = () => {
+    const trimmed = keyInput.trim()
+    saveApiKey(trimmed)
+    setApiKey(trimmed)
   }
 
-  const loadContext = (name) => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('mangaCtx') || '{}')
-      if (saved.workName === name) setContext(saved.context || '')
-      else setContext('')
-    } catch {}
+  const handleModelChange = (e) => {
+    const m = e.target.value
+    setModelState(m)
+    saveModel(m)
   }
 
-  const generateContext = async () => {
+  const handleSaveContext = () => {
     if (!workName.trim()) { alert('작품명을 입력하세요'); return }
+    storeContext(workName, context)
+  }
+
+  const handleGenerateContext = async () => {
+    if (!workName.trim()) { alert('작품명을 입력하세요'); return }
+    if (!apiKey) { alert('API 키를 먼저 설정하세요'); return }
     setGeneratingCtx(true)
     try {
-      const r = await fetch('/api/generate-context', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workName })
-      })
-      const data = await r.json()
-      if (data.context) setContext(data.context)
-      else alert('생성 실패: ' + (data.error || ''))
+      const result = await apiGenerateContext(apiKey, workName, model)
+      if (result.context) setContext(result.context)
     } catch (e) {
       alert('생성 실패: ' + e.message)
     } finally {
@@ -55,46 +66,81 @@ export default function App() {
     }
   }
 
+  // 이미지 파일 추가
+  const addImageFiles = async (files) => {
+    const newPages = []
+    const startIdx = pages.length
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (!file.type.startsWith('image/')) continue
+      const dataUrl = await imageToBase64(file)
+      newPages.push({
+        idx: startIdx + i + 1,
+        imageUrl: dataUrl,
+        fileName: file.name,
+        jp: '', ko: '', bubbles: [], source: ''
+      })
+    }
+    setPages(prev => [...prev, ...newPages])
+  }
+
+  const handleFileSelect = (e) => {
+    if (e.target.files?.length) addImageFiles([...e.target.files])
+    e.target.value = ''
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragging(false)
+    if (e.dataTransfer.files?.length) addImageFiles([...e.dataTransfer.files])
+  }
+
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    const files = []
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        files.push(item.getAsFile())
+      }
+    }
+    if (files.length) addImageFiles(files)
+  }
+
+  useEffect(() => {
+    document.addEventListener('paste', handlePaste)
+    return () => document.removeEventListener('paste', handlePaste)
+  }, [pages])
+
+  // 데모 이미지 로드
+  const loadDemoImages = async () => {
+    const newPages = []
+    for (let i = 0; i < SAMPLE_IMAGES.length; i++) {
+      try {
+        const res = await fetch(import.meta.env.BASE_URL + SAMPLE_IMAGES[i])
+        const blob = await res.blob()
+        const dataUrl = await imageToBase64(blob)
+        newPages.push({
+          idx: i + 1,
+          imageUrl: dataUrl,
+          fileName: SAMPLE_IMAGES[i],
+          jp: '', ko: '', bubbles: [], source: ''
+        })
+      } catch {}
+    }
+    if (newPages.length) setPages(newPages)
+    else alert('데모 이미지를 불러올 수 없습니다')
+  }
+
   const toggleBubble = (pageIdx, bubbleIdx) => {
     const key = `${pageIdx}-${bubbleIdx}`
     setVisibleBubbles(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const fetchPages = async () => {
-    setLoading(true)
-    try {
-      const r = await fetch(`/api/extract-images?url=${encodeURIComponent(url)}`)
-      const data = await r.json()
-      const newPages = (data.images || []).map((u, i) => ({
-        idx: i + 1, imageUrl: u, jp: '', ko: '', bubbles: [], source: ''
-      }))
-      setPages(newPages)
-
-      try {
-        const tr = await fetch(`/api/translations?sourceUrl=${encodeURIComponent(url)}`)
-        const trData = await tr.json()
-        if (trData?.item?.pages?.length) {
-          const map = new Map(trData.item.pages.map(p => [Number(p.idx), p]))
-          setPages(prev => prev.map(p => ({
-            ...p,
-            jp: map.get(p.idx)?.jp || p.jp,
-            ko: map.get(p.idx)?.ko || p.ko,
-            bubbles: map.get(p.idx)?.bubbles || p.bubbles,
-            source: map.get(p.idx)?.source || p.source
-          })))
-        }
-      } catch {}
-    } catch {
-      alert('이미지 수집 실패')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const translatePage = async (page) => {
+    if (!apiKey) { alert('API 키를 설정하세요'); return }
     setPageBusy(prev => ({ ...prev, [page.idx]: true }))
     try {
-      // 이전 페이지 번역 결과를 컨텍스트로 포함 (최근 3페이지)
       const prevPages = pages
         .filter(p => p.idx < page.idx && p.bubbles?.length > 0)
         .slice(-3)
@@ -102,16 +148,16 @@ export default function App() {
         .join('\n')
       const fullContext = [context, prevPages ? `\n[이전 페이지 대사]\n${prevPages}` : ''].join('')
 
-      const r = await fetch('/api/translate-page', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: page.imageUrl, idx: page.idx, sourceUrl: url, context: fullContext })
-      })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data?.error || 'failed')
+      const result = await translateImage(apiKey, page.imageUrl, fullContext, model)
       setPages(prev => prev.map(p =>
         p.idx === page.idx
-          ? { ...p, jp: data.page.jp, ko: data.page.ko, bubbles: data.page.bubbles || [], source: 'auto' }
+          ? {
+              ...p,
+              jp: result.bubbles.map(b => b.text).join('\n'),
+              ko: result.bubbles.map(b => b.ko).join('\n'),
+              bubbles: result.bubbles,
+              source: 'auto'
+            }
           : p
       ))
     } catch (e) {
@@ -122,6 +168,7 @@ export default function App() {
   }
 
   const translateAll = async () => {
+    if (!apiKey) { alert('API 키를 설정하세요'); return }
     setTranslatingAll(true)
     const untranslated = pages.filter(p => !p.ko)
     for (const page of untranslated) {
@@ -134,24 +181,21 @@ export default function App() {
     if (!page.bubbles?.length) return
     setPageBusy(prev => ({ ...prev, [`exp-${page.idx}`]: true }))
     try {
-      const r = await fetch('/api/export-page', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: page.imageUrl, bubbles: page.bubbles })
-      })
-      if (!r.ok) throw new Error('export failed')
-      const blob = await r.blob()
-      const u = URL.createObjectURL(blob)
+      const dataUrl = await exportTranslatedImage(page.imageUrl, page.bubbles)
       const a = document.createElement('a')
-      a.href = u
-      a.download = `page-${page.idx}-ko.jpg`
+      a.href = dataUrl
+      a.download = `page-${page.idx}-ko.png`
       a.click()
-      URL.revokeObjectURL(u)
     } catch (e) {
       alert(`내보내기 실패: ${e.message}`)
     } finally {
       setPageBusy(prev => ({ ...prev, [`exp-${page.idx}`]: false }))
     }
+  }
+
+  const clearPages = () => {
+    setPages([])
+    setVisibleBubbles({})
   }
 
   const untranslatedCount = pages.filter(p => !p.ko).length
@@ -160,14 +204,63 @@ export default function App() {
     <div className="wrap">
       <header className="top">
         <h1>만화 번역 뷰어</h1>
+
+        <details className="settings-panel">
+          <summary>API 설정 {apiKey ? '(설정됨)' : '(미설정)'}</summary>
+          <div className="settings-body">
+            <div className="settings-row">
+              <input
+                type="password"
+                value={keyInput}
+                onChange={e => setKeyInput(e.target.value)}
+                placeholder="OpenAI API 키 (sk-...)"
+              />
+              <button className="btn-sm btn-green" onClick={handleSaveKey}>저장</button>
+            </div>
+            <div className="settings-row">
+              <label>모델</label>
+              <select value={model} onChange={handleModelChange}>
+                <option value="gpt-4o-mini">gpt-4o-mini (저렴)</option>
+                <option value="gpt-4o">gpt-4o (고품질)</option>
+              </select>
+            </div>
+            <p className="settings-note">
+              API 키는 브라우저 localStorage에만 저장됩니다. 서버로 전송되지 않습니다.
+            </p>
+          </div>
+        </details>
+
+        <div
+          className={`drop-zone ${dragging ? 'dragging' : ''}`}
+          onDragOver={e => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*"
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+          <p>이미지를 드래그하거나 클릭하여 업로드</p>
+          <p className="drop-hint">클립보드 붙여넣기(Ctrl+V)도 가능</p>
+        </div>
+
         <div className="controls">
-          <input value={url} onChange={e => setUrl(e.target.value)} placeholder="이미지 뷰어 URL" />
-          <button onClick={fetchPages} disabled={loading || translatingAll}>
-            {loading ? '수집중...' : '이미지 수집'}
+          <button onClick={loadDemoImages} disabled={translatingAll}>
+            데모 체험
           </button>
           <button onClick={translateAll} disabled={!pages.length || translatingAll || !untranslatedCount}>
             {translatingAll ? '번역중...' : `전체 번역 (${untranslatedCount})`}
           </button>
+          {pages.length > 0 && (
+            <button className="btn-danger" onClick={clearPages} disabled={translatingAll}>
+              초기화
+            </button>
+          )}
         </div>
 
         <details className="ctx-panel">
@@ -176,13 +269,13 @@ export default function App() {
             <div className="ctx-row">
               <input
                 value={workName}
-                onChange={e => { setWorkName(e.target.value); loadContext(e.target.value) }}
+                onChange={e => setWorkName(e.target.value)}
                 placeholder="작품명 (예: 원펀맨)"
               />
-              <button className="btn-sm btn-purple" onClick={generateContext} disabled={generatingCtx}>
+              <button className="btn-sm btn-purple" onClick={handleGenerateContext} disabled={generatingCtx}>
                 {generatingCtx ? '생성중...' : 'AI 생성'}
               </button>
-              <button className="btn-sm btn-green" onClick={saveContext}>저장</button>
+              <button className="btn-sm btn-green" onClick={handleSaveContext}>저장</button>
             </div>
             <textarea
               value={context}
@@ -198,7 +291,7 @@ export default function App() {
         {pages.map(p => (
           <article key={p.idx} className="card">
             <div className="img-wrap">
-              <img src={`/api/proxy-image?url=${encodeURIComponent(p.imageUrl)}`} alt={`p${p.idx}`} loading="lazy" />
+              <img src={p.imageUrl} alt={`p${p.idx}`} loading="lazy" />
               {p.bubbles?.map((b, i) => {
                 const key = `${p.idx}-${i}`
                 const shown = !!visibleBubbles[key]
@@ -222,6 +315,7 @@ export default function App() {
             <div className="meta">
               <h3>
                 {p.idx}페이지
+                {p.fileName && ` · ${p.fileName}`}
                 {p.bubbles?.length > 0 && ` · ${p.bubbles.length}칸`}
                 {p.source === 'auto' && !p.bubbles?.length && p.ko === '' && ' · 대사 없음'}
               </h3>

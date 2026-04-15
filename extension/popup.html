@@ -14,7 +14,7 @@
     label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; margin-top: 10px; }
     .row { display: flex; gap: 6px; }
     .row input { flex: 1; }
-    input, textarea { width: 100%; padding: 8px; border: 1px solid #3a3f4b; border-radius: 8px; background: #0f1116; color: #f2f2f2; font-size: 13px; font-family: inherit; }
+    input, textarea, select { width: 100%; padding: 8px; border: 1px solid #3a3f4b; border-radius: 8px; background: #0f1116; color: #f2f2f2; font-size: 13px; font-family: inherit; }
     textarea { min-height: 100px; resize: vertical; margin-top: 4px; }
     button { width: 100%; padding: 10px; border: none; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; margin-top: 8px; }
     button:disabled { opacity: 0.5; }
@@ -22,6 +22,7 @@
     .btn-green { background: #16a34a; }
     .btn-purple { background: #7c3aed; }
     .saved { font-size: 11px; color: #22c55e; margin-top: 4px; display: none; }
+    .key-note { font-size: 11px; color: #64748b; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -31,6 +32,19 @@
     <span id="status-text">확인 중...</span>
   </div>
   <div class="info" id="info"></div>
+
+  <label>OpenAI API 키</label>
+  <div class="row">
+    <input type="password" id="api-key" placeholder="sk-..." />
+    <button class="btn-sm btn-green" id="save-key">저장</button>
+  </div>
+  <p class="key-note">브라우저에만 저장됩니다.</p>
+
+  <label>모델</label>
+  <select id="model-select">
+    <option value="gpt-4o-mini">gpt-4o-mini (저렴)</option>
+    <option value="gpt-4o">gpt-4o (고품질)</option>
+  </select>
 
   <label>작품명</label>
   <div class="row">
