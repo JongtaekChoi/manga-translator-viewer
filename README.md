@@ -17,6 +17,12 @@
 
 ---
 
+
+
+https://github.com/user-attachments/assets/65a1a1b7-3927-412b-a482-b0f5a9c71300
+
+
+
 ## 아키텍처
 
 ```
