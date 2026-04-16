@@ -1,11 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Manga Translator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "만화 페이지의 말풍선을 자동 검출하고 한국어로 번역하여 오버레이합니다.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": [
-    "https://api.openai.com/*",
     "<all_urls>"
   ],
   "action": {

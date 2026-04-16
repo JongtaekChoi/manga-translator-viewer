@@ -22,7 +22,7 @@
     .btn-green { background: #16a34a; }
     .btn-purple { background: #7c3aed; }
     .saved { font-size: 11px; color: #22c55e; margin-top: 4px; display: none; }
-    .key-note { font-size: 11px; color: #64748b; margin-top: 4px; }
+    .key-note { font-size: 11px; color: #64748b; margin-top: 4px; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -33,31 +33,36 @@
   </div>
   <div class="info" id="info"></div>
 
-  <label>OpenAI API 키</label>
+  <label>서버 URL</label>
   <div class="row">
-    <input type="password" id="api-key" placeholder="sk-..." />
-    <button class="btn-sm btn-green" id="save-key">저장</button>
+    <input type="text" id="server-url" placeholder="http://localhost:8789" />
+    <button class="btn-sm btn-green" id="save-server">저장</button>
   </div>
-  <p class="key-note">브라우저에만 저장됩니다.</p>
+  <p class="key-note">로컬: http://localhost:8789<br>홈 네트워크: http://mac-mini.local:8789<br>Tailscale: http://&lt;hostname&gt;:8789</p>
 
-  <label>모델</label>
+  <label>OpenAI 모델</label>
   <select id="model-select">
-    <option value="gpt-4o-mini">gpt-4o-mini (저렴)</option>
-    <option value="gpt-4o">gpt-4o (고품질)</option>
+    <option value="gpt-4o-mini">gpt-4o-mini (저렴, 빠름)</option>
+    <option value="gpt-4o">gpt-4o (정확도 ↑)</option>
+    <option value="gpt-4.1">gpt-4.1</option>
+    <option value="gpt-4.1-mini">gpt-4.1-mini</option>
   </select>
 
-  <label>작품명</label>
+  <label>작품명 (클릭하면 저장된 목록)</label>
   <div class="row">
-    <input id="work-name" placeholder="예: 원펀맨" />
+    <input id="work-name" list="saved-works" placeholder="예: 원펀맨" autocomplete="off" />
     <button class="btn-sm btn-purple" id="generate-ctx">AI 생성</button>
   </div>
+  <datalist id="saved-works"></datalist>
 
   <label>작품 컨텍스트 (번역 시 참고)</label>
   <textarea id="context" placeholder="캐릭터 이름, 용어, 말투 등..."></textarea>
   <div class="saved" id="saved-msg">저장됨</div>
   <button class="btn-green" id="save-ctx">컨텍스트 저장</button>
 
-  <button id="translate-all">현재 페이지 전체 번역</button>
+  <button id="translate-all" style="margin-top: 12px;">현재 페이지 전체 번역</button>
+
+  <p class="key-note" style="margin-top: 8px;">개별: 이미지 위의 "번역" 버튼. 전체: 위 버튼.</p>
 
   <script src="popup.js"></script>
 </body>

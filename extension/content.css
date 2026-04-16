@@ -1,85 +1,45 @@
 .mtl-img-wrap {
-  position: relative;
-  display: inline-block;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.mtl-toolbar {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 4px 6px;
+  background: rgba(23, 25, 31, 0.85);
+  border-radius: 6px 6px 0 0;
 }
 
 .mtl-translate-btn,
-.mtl-export-btn {
-  position: absolute;
-  z-index: 9999;
-  padding: 6px 12px;
+.mtl-toggle-btn,
+.mtl-download-btn {
+  padding: 5px 12px;
   border: none;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  opacity: 0.85;
+  color: #fff;
+  opacity: 0.95;
   transition: opacity 0.15s;
 }
 
 .mtl-translate-btn:hover,
-.mtl-export-btn:hover {
+.mtl-toggle-btn:hover,
+.mtl-download-btn:hover {
   opacity: 1;
 }
 
-.mtl-translate-btn {
-  top: 8px;
-  right: 8px;
-  background: #2563eb;
-  color: #fff;
-}
-
-.mtl-export-btn {
-  top: 8px;
-  right: 80px;
-  background: #7c3aed;
-  color: #fff;
-}
+.mtl-translate-btn { background: #2563eb; }
+.mtl-toggle-btn    { background: #475569; }
+.mtl-download-btn  { background: #7c3aed; }
 
 .mtl-translate-btn:disabled,
-.mtl-export-btn:disabled {
+.mtl-toggle-btn:disabled,
+.mtl-download-btn:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-.mtl-bubble {
-  position: absolute;
-  cursor: pointer;
-  border: 1.5px dashed rgba(100, 180, 255, 0.35);
-  border-radius: 4px;
-  background: rgba(100, 180, 255, 0.06);
-  transition: background 0.15s, border-color 0.15s;
-  z-index: 9998;
-}
-
-.mtl-bubble:hover {
-  background: rgba(100, 180, 255, 0.15);
-  border-color: rgba(100, 180, 255, 0.6);
-}
-
-.mtl-bubble .mtl-bubble-text {
-  display: none;
-}
-
-.mtl-bubble.active {
-  background: rgba(0, 0, 0, 0.75);
-  border-color: rgba(100, 180, 255, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-  min-width: fit-content;
-  min-height: fit-content;
-  padding: 4px;
-}
-
-.mtl-bubble.active .mtl-bubble-text {
-  display: block;
-  color: #fff;
-  font-size: clamp(9px, 1.4vw, 14px);
-  font-weight: 700;
-  line-height: 1.4;
-  text-align: center;
-  word-break: break-word;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 0 1px 2px rgba(0, 0, 0, 0.9);
 }
