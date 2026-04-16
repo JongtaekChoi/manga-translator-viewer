@@ -12,14 +12,14 @@ fi
 echo "▶ Installing Python dependencies..."
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install \
-  manga-ocr \
   opencv-python-headless \
   torch \
   torchvision \
   requests \
   pyclipper \
   shapely \
-  einops
+  einops \
+  pillow
 
 CTD_DIR=".venv/comic-text-detector"
 if [ ! -d "$CTD_DIR" ]; then

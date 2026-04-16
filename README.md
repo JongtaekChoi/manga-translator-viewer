@@ -9,9 +9,10 @@
 ## 주요 기능
 
 - **말풍선 자동 검출** — comic-text-detector(YOLO 기반)로 텍스트 영역 검출
-- **만화 특화 OCR** — manga_ocr로 일본어 텍스트 추출 (병렬 실행)
-- **맥락 기반 번역** — OpenAI Vision으로 이미지 장면을 참고한 자연스러운 번역 (OpenAI 키 없으면 Google Translate fallback)
+- **Vision OCR + 번역** — 각 풍선 crop을 OpenAI Vision에 multi-image 1회 호출로 OCR + 번역을 동시에 수행 (효과음/스타일리쉬 폰트도 강건)
+- **CTD 실패 시 fallback** — 임계값 자동 완화 → 그래도 실패하면 전체 페이지를 GPT Vision에 맡김
 - **인페인팅 + 합성** — 원문 텍스트를 OpenCV inpainting으로 지우고 한국어를 직접 그려서 반환
+- **사이트별 활성화 토글** — 팝업에서 "이 사이트에서 활성화" 체크 → 해당 호스트에서만 버튼 표시
 - **작품 컨텍스트** — 캐릭터명/용어/말투를 저장해두면 모든 페이지 번역에 반영
 - **이미지 단위 / 페이지 전체 번역** — 개별 이미지에 "번역" 버튼 or 팝업에서 현재 탭 전체 번역
 
@@ -39,9 +40,10 @@ https://github.com/user-attachments/assets/65a1a1b7-3927-412b-a482-b0f5a9c71300
            ▼
 ┌─ Python 서버 (localhost:8789) ──────────────────────────┐
 │                                                         │
-│  comic-text-detector → manga_ocr (4-way parallel)       │
+│  comic-text-detector — 말풍선 bbox 검출                   │
 │              ↓                                          │
-│         OpenAI / Google Translate                       │
+│  crops → OpenAI Vision (multi-image 1회 호출)            │
+│   → 각 crop OCR + 번역을 LLM이 한 번에 처리               │
 │              ↓                                          │
 │      OpenCV inpainting + Pillow 한글 렌더               │
 │                                                         │
@@ -61,13 +63,11 @@ https://github.com/user-attachments/assets/65a1a1b7-3927-412b-a482-b0f5a9c71300
 
 위 스크립트가 수행:
 - Python venv 생성 (`.venv/`)
-- 의존성 설치 (manga-ocr, torch, torchvision, opencv, shapely 등)
+- 의존성 설치 (torch, torchvision, opencv, shapely 등)
 - comic-text-detector 리포 clone (`.venv/comic-text-detector/`)
 - 모델 파일 다운로드 (`comictextdetector.pt`, ~50MB)
 
-첫 실행 시 manga_ocr 모델(~400MB)은 HuggingFace에서 자동 다운로드됩니다.
-
-### 2. OpenAI API 키 (권장)
+### 2. OpenAI API 키 (필수)
 
 ```bash
 echo "OPENAI_API_KEY=sk-..." > .env
@@ -79,7 +79,7 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-키가 없으면 Google Translate로 fallback됩니다.
+OpenAI Vision이 OCR + 번역을 모두 담당하므로 키는 반드시 설정해야 합니다.
 
 ### 3. 서버 시작
 
@@ -100,15 +100,25 @@ OPENAI_MODEL=gpt-4o-mini
 4. 툴바의 퍼즐 아이콘에서 확장을 **📌 고정**
 5. 확장 팝업 열고 서버 URL 입력 (기본 `http://localhost:8789`)
 6. 모델 선택 (기본 `gpt-4o-mini`)
-7. (선택) 작품명 + 컨텍스트 저장
+7. 만화 사이트로 이동 후 팝업에서 **이 사이트에서 활성화** 체크
+8. (선택) 작품명 + 컨텍스트 저장
 
 ---
 
 ## 사용법
 
+### 사이트 활성화
+
+버튼은 기본적으로 숨겨져 있어서 일반 웹 서핑에는 방해되지 않습니다. 만화 사이트에서 쓰려면:
+
+1. 만화 사이트로 이동
+2. 확장 아이콘 클릭 → 팝업 열기
+3. **이 사이트에서 활성화** 체크 → 즉시 이미지에 버튼 표시
+4. 해당 호스트는 저장되어 다음 방문 시 자동 활성화
+
 ### 개별 이미지 번역
 
-1. 만화 사이트에서 이미지 위의 **번역** 버튼 클릭
+1. 이미지 위의 **번역** 버튼 클릭
 2. 서버가 자동으로 검출 + OCR + 번역 + 합성 (페이지당 5~15초)
 3. 이미지가 번역본으로 교체됨
 4. **원본** 버튼: 원본/번역본 토글
@@ -158,11 +168,7 @@ Python 서버 (`localhost:8789`)
 | 엔드포인트 | 메서드 | 기능 |
 |---|---|---|
 | `/health` | GET | 서버 상태 + OpenAI 키 유무 |
-| `/proxy-image?url=` | GET | CORS 우회 이미지 프록시 |
-| `/ocr` | POST | 텍스트 영역 검출 + OCR |
-| `/translate` | POST | OCR + 번역 (bubbles 배열 반환) |
 | `/translate-render` | POST | 검출 + 번역 + 렌더링을 한 번에 (확장이 사용) |
-| `/export` | POST | bubbles 배열 받아 번역본 이미지 합성 |
 | `/generate-context` | POST | 작품명으로 컨텍스트 초안 생성 |
 
 `/translate-render` 요청 body:
@@ -170,9 +176,12 @@ Python 서버 (`localhost:8789`)
 {
   "imageUrl": "https://.../page.jpg",
   "context": "작품 컨텍스트...",
-  "model": "gpt-4o-mini"
+  "model": "gpt-4o-mini",
+  "referer": "https://manga-site.com/..."
 }
 ```
+
+`referer`는 핫링크 방지하는 만화 사이트 대응용 (확장이 자동으로 페이지 URL 전달).
 
 응답:
 ```json
@@ -189,8 +198,7 @@ Python 서버 (`localhost:8789`)
 | 구성 | 기술 |
 |---|---|
 | 텍스트 검출 | [comic-text-detector](https://github.com/dmMaze/comic-text-detector) (YOLOv5) |
-| OCR | [manga_ocr](https://github.com/kha-white/manga-ocr) (ViT + TrOCR) |
-| 번역 | OpenAI Chat Completions (gpt-4o-mini / gpt-4o / gpt-4.1) / Google Translate |
+| OCR + 번역 | OpenAI Vision (gpt-4o-mini / gpt-4o / gpt-4.1) — multi-image 단일 호출 |
 | 이미지 합성 | OpenCV inpainting + Pillow 한글 렌더링 |
 | 서버 | Python `http.server` (의존성 최소) |
 | 익스텐션 | Chrome Manifest V3 |
@@ -199,11 +207,23 @@ Python 서버 (`localhost:8789`)
 
 ## 성능 메모
 
-- MPS 자동 감지: Apple Silicon에서 CTD/manga_ocr이 GPU 가속으로 동작
-- OCR은 ThreadPoolExecutor(4)로 병렬 실행 → 풍선 많은 페이지에서 체감 속도 큰 차이
-- 서버 로그에 단계별 timing 출력 (`[timing] ctd=... ocr=... translate=... render=... total=...`)
+- MPS 자동 감지: Apple Silicon에서 CTD가 GPU 가속으로 동작
+- Vision API는 multi-image 1회 호출로 페이지 내 모든 풍선 일괄 처리
+- 서버 로그에 단계별 timing 출력 (`[timing] ctd=... translate=... render=... total=...`)
 - 번역본은 클라이언트에서 blob URL로 변환해 캐싱 → 토글/재사용 시 재디코딩 없음
-- 일반 페이지 기준 처리 시간: 검출 ~1s + OCR 2~6s + 번역 3~6s + 렌더 <1s
+- 일반 페이지 기준 처리 시간: 검출 ~1s + Vision 호출 3~8s + 렌더 <1s
+
+## 디버깅
+
+CTD가 풍선을 못 찾는 경우 (`detections=0` 로그):
+
+1. **임계값 완화** — `.env`에 `CTD_CONF_THRESH=0.15` 추가 후 서버 재시작
+2. **자동 재시도** — 0.25로 0개 검출되면 0.1로 한 번 더 시도 (내장)
+3. **Full-page Vision fallback** — 위 둘 다 실패 시 전체 페이지를 GPT Vision에 통째로 맡김 (내장, bbox 정확도 떨어짐)
+
+이미지 다운로드 문제 확인:
+- 서버가 마지막 다운로드를 `/tmp/mtl_last_download.jpg`에 저장 → `open /tmp/mtl_last_download.jpg`로 실제 받은 이미지 확인
+- 다운로드 실패 / placeholder인 경우 Referer 체크하는 사이트 — 확장이 자동 전달하지만 일부 사이트는 추가 검증 있을 수 있음
 
 ---
 

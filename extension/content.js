@@ -53,7 +53,11 @@ async function handleTranslate(img, wrap, btn) {
   btn.disabled = true
 
   try {
-    const result = await sendRequest({ type: 'translateRender', imageUrl: state.originalSrc })
+    const result = await sendRequest({
+      type: 'translateRender',
+      imageUrl: state.originalSrc,
+      referer: location.href,
+    })
 
     if (!result.rendered) {
       btn.textContent = '텍스트 없음'
@@ -129,9 +133,59 @@ function ensureDownloadButton(wrap, state) {
   getToolbar(wrap).appendChild(btn)
 }
 
+let debounceTimer = null
+let observer = null
+
+function startExtension() {
+  if (observer) return
+  addTranslateButtons()
+  observer = new MutationObserver(() => {
+    clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(addTranslateButtons, 300)
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
+}
+
+function stopExtension() {
+  if (observer) {
+    observer.disconnect()
+    observer = null
+  }
+  clearTimeout(debounceTimer)
+  // 기존에 삽입한 wrap/버튼/오버레이 모두 제거하고 img를 원래 자리로 복귀
+  document.querySelectorAll(`.${WRAP_CLASS}`).forEach(wrap => {
+    const img = wrap.querySelector('img')
+    if (img && wrap.parentNode) {
+      // translatedSrc를 사용 중이었다면 원본 src로 복원
+      const state = wrapState.get(wrap)
+      if (state?.originalSrc && img.src !== state.originalSrc) {
+        img.src = state.originalSrc
+      }
+      if (state?.translatedSrc?.startsWith('blob:')) {
+        URL.revokeObjectURL(state.translatedSrc)
+      }
+      wrap.parentNode.insertBefore(img, wrap)
+      wrap.remove()
+    } else {
+      wrap.remove()
+    }
+  })
+}
+
+async function isHostEnabled() {
+  try {
+    const data = await chrome.storage.local.get(['enabled_hosts'])
+    return (data.enabled_hosts || []).includes(location.hostname)
+  } catch {
+    return false
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === 'translateAll') {
-    // 페이지에 보이는 모든 번역 버튼을 순차적으로(약간의 간격으로) 클릭
+  if (msg.type === 'hostToggle') {
+    if (msg.enabled) startExtension()
+    else stopExtension()
+  } else if (msg.type === 'translateAll') {
     const btns = Array.from(document.querySelectorAll('.mtl-translate-btn'))
       .filter(b => !b.disabled && b.textContent === '번역')
     btns.forEach((btn, i) => {
@@ -140,11 +194,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 })
 
-addTranslateButtons()
-
-let debounceTimer = null
-const observer = new MutationObserver(() => {
-  clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(addTranslateButtons, 300)
+// 초기 시작: 현재 호스트가 활성화 목록에 있을 때만
+isHostEnabled().then(enabled => {
+  if (enabled) startExtension()
 })
-observer.observe(document.body, { childList: true, subtree: true })

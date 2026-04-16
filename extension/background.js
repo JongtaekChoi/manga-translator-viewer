@@ -20,7 +20,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const res = await fetch(`${server}/translate-render`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageUrl: msg.imageUrl, context, model })
+          body: JSON.stringify({ imageUrl: msg.imageUrl, context, model, referer: msg.referer })
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))

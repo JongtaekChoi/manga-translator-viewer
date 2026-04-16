@@ -12,6 +12,43 @@ const generateCtxBtn = document.getElementById('generate-ctx')
 const savedMsg = document.getElementById('saved-msg')
 const savedWorksList = document.getElementById('saved-works')
 const modelSelect = document.getElementById('model-select')
+const hostEnabled = document.getElementById('host-enabled')
+const hostName = document.getElementById('host-name')
+
+// 현재 활성 탭의 호스트명 표시 + 활성화 여부 로드
+;(async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab?.url) return
+    const u = new URL(tab.url)
+    if (!['http:', 'https:'].includes(u.protocol)) {
+      hostName.textContent = '(일반 페이지에서만)'
+      hostEnabled.disabled = true
+      return
+    }
+    const hostname = u.hostname
+    hostName.textContent = hostname
+
+    const data = await chrome.storage.local.get(['enabled_hosts'])
+    hostEnabled.checked = (data.enabled_hosts || []).includes(hostname)
+
+    hostEnabled.addEventListener('change', async () => {
+      const stored = await chrome.storage.local.get(['enabled_hosts'])
+      let hosts = stored.enabled_hosts || []
+      if (hostEnabled.checked) {
+        if (!hosts.includes(hostname)) hosts.push(hostname)
+      } else {
+        hosts = hosts.filter(h => h !== hostname)
+      }
+      await chrome.storage.local.set({ enabled_hosts: hosts })
+      try {
+        await chrome.tabs.sendMessage(tab.id, { type: 'hostToggle', enabled: hostEnabled.checked })
+      } catch { /* content script not injected on this page */ }
+    })
+  } catch (e) {
+    console.warn('host toggle init failed:', e)
+  }
+})()
 
 function refreshSavedWorks(contexts) {
   savedWorksList.innerHTML = ''
